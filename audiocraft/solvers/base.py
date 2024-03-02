@@ -441,6 +441,21 @@ class StandardSolver(ABC, flashy.BaseSolver):
         self.logger.info("Restoring weights and history.")
         restored_checkpoints = self.load_checkpoints(load_best, ignore_state_keys)
 
+        
+        # -----------------------------------------------FREEZE MODEL HALF LAYERS (HRAYR) -----------------------------------------------
+
+
+
+
+        self.freeze_layers()
+        model_size = sum(p.numel() for p in self.model.parameters() if p.requires_grad) / 1e6
+        # one copy of grad, one copy of momentum, one copy of denominator and model weights.
+        # and 4 bytes for each float!
+        mem_usage = model_size * 4 * 4 / 1000
+        self.logger.info("Model RESTORE size: %.2f M params", model_size)
+
+        # -----------------------------------------------FREEZE MODEL HALF LAYERS (HRAYR) -----------------------------------------------
+
         self.logger.info("Model hash: %s", model_hash(self.model))
 
         if replay_metrics and len(self.history) > 0:
@@ -486,10 +501,20 @@ class StandardSolver(ABC, flashy.BaseSolver):
                 if self.should_run_stage('generate'):
                     self.run_stage('generate', with_rank_rng()(self.generate))
 
+
+    def freeze_layers(self, max_layer = 20):
+        freeze_layer_list = ['emb'] +  [f'transformer.layers.{i}.' for i in range(max_layer)]
+
+        for n, param in self.model.named_parameters():
+            if any([n.startswith(layer_name) for layer_name in freeze_layer_list]):
+                param.requires_grad = False
+
     def run(self):
         """Training loop."""
         assert len(self.state_dict()) > 0
+
         self.restore(replay_metrics=True)  # load checkpoint and replay history
+
         self.log_hyperparams(dict_from_config(self.cfg))
         for epoch in range(self.epoch, self.cfg.optim.epochs + 1):
             if self.should_stop_training():
@@ -534,6 +559,7 @@ class StandardSolver(ABC, flashy.BaseSolver):
         metrics: dict = {}
 
         with self.profiler, self.deadlock_detect:  # profiler will only run for the first 20 updates.
+            self.logger.warning("*"*50 + "With Profiler and Deadlock Detect") # HRAYR
             for idx, batch in enumerate(lp):
                 self.deadlock_detect.update('batch')
                 if idx >= updates_per_epoch:

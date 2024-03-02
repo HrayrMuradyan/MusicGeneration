@@ -157,6 +157,8 @@ class BaseGenModel(ABC):
             progress (bool, optional): Flag to display progress of the generation process. Defaults to False.
         """
         attributes, prompt_tokens = self._prepare_tokens_and_attributes(descriptions, None)
+        for attribute in attributes:
+            print(attribute)
         assert prompt_tokens is None
         tokens = self._generate_tokens(attributes, prompt_tokens, progress)
         if return_tokens:

@@ -64,6 +64,7 @@ class MusicGen(BaseGenModel):
         - facebook/musicgen-large (3.3B), text to music,
           # see: https://huggingface.co/facebook/musicgen-large
         """
+
         if device is None:
             if torch.cuda.device_count():
                 device = 'cuda'

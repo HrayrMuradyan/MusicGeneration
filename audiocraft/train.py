@@ -46,6 +46,7 @@ def get_solver(cfg):
             cfg.dataset[split].batch_size //= flashy.distrib.world_size()
     resolve_config_dset_paths(cfg)
     solver = solvers.get_solver(cfg)
+    print('Got the solver')
     return solver
 
 
@@ -108,7 +109,8 @@ def init_seed_and_system(cfg):
     import random
     from audiocraft.modules.transformer import set_efficient_attention_backend
 
-    multiprocessing.set_start_method(cfg.mp_start_method)
+    print(cfg.mp_start_method)
+    # multiprocessing.set_start_method(cfg.mp_start_method)
     logger.debug('Setting mp start method to %s', cfg.mp_start_method)
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)

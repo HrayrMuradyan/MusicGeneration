@@ -9,7 +9,7 @@ Utility functions for SLURM configuration and cluster settings.
 """
 
 from enum import Enum
-import os
+import os, platform
 import socket
 import typing as tp
 
@@ -25,19 +25,19 @@ class ClusterType(Enum):
 
 
 def _guess_cluster_type() -> ClusterType:
-    uname = os.uname()
-    fqdn = socket.getfqdn()
-    if uname.sysname == "Linux" and (uname.release.endswith("-aws") or ".ec2" in fqdn):
-        return ClusterType.AWS
+    # uname = platform.uname()
+    # fqdn = socket.getfqdn()
+    # if uname.sysname == "Linux" and (uname.release.endswith("-aws") or ".ec2" in fqdn):
+    #     return ClusterType.AWS
 
-    if fqdn.endswith(".fair"):
-        return ClusterType.FAIR
+    # if fqdn.endswith(".fair"):
+    #     return ClusterType.FAIR
 
-    if fqdn.endswith(".facebook.com"):
-        return ClusterType.RSC
+    # if fqdn.endswith(".facebook.com"):
+    #     return ClusterType.RSC
 
-    if uname.sysname == "Darwin":
-        return ClusterType.LOCAL_DARWIN
+    # if uname.sysname == "Darwin":
+    #     return ClusterType.LOCAL_DARWIN
 
     return ClusterType.DEFAULT
 
