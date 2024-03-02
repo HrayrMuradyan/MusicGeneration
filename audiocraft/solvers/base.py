@@ -441,17 +441,11 @@ class StandardSolver(ABC, flashy.BaseSolver):
         self.logger.info("Restoring weights and history.")
         restored_checkpoints = self.load_checkpoints(load_best, ignore_state_keys)
 
-        
+
         # -----------------------------------------------FREEZE MODEL HALF LAYERS (HRAYR) -----------------------------------------------
-
-
-
 
         self.freeze_layers()
         model_size = sum(p.numel() for p in self.model.parameters() if p.requires_grad) / 1e6
-        # one copy of grad, one copy of momentum, one copy of denominator and model weights.
-        # and 4 bytes for each float!
-        mem_usage = model_size * 4 * 4 / 1000
         self.logger.info("Model RESTORE size: %.2f M params", model_size)
 
         # -----------------------------------------------FREEZE MODEL HALF LAYERS (HRAYR) -----------------------------------------------

@@ -110,13 +110,6 @@ class MusicGenSolver(base.StandardSolver):
     def best_metric_name(self) -> tp.Optional[str]:
         return self._best_metric_name
 
-    def freeze_layers(self, max_layer = 20):
-        freeze_layer_list = ['emb'] +  [f'transformer.layers.{i}.' for i in range(max_layer)]
-
-        for n, param in self.model.named_parameters():
-            if any([n.startswith(layer_name) for layer_name in freeze_layer_list]):
-                param.requires_grad = False
-
     def build_model(self) -> None:
         """Instantiate models and optimizer."""
         # we can potentially not use all quantizers with which the EnCodec model was trained
@@ -143,13 +136,6 @@ class MusicGenSolver(base.StandardSolver):
                          self.compression_model.frame_rate)
         # instantiate LM model
         self.model: models.LMModel = models.builders.get_lm_model(self.cfg).to(self.device)
-        # -----------------------------------------------FREEZE MODEL HALF LAYERS (HRAYR) -----------------------------------------------
-
-        # self.freeze_layers()
-
-
-        # -----------------------------------------------FREEZE MODEL HALF LAYERS (HRAYR) -----------------------------------------------
-
 
 
         if self.cfg.fsdp.use:
