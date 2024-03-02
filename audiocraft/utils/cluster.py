@@ -9,7 +9,7 @@ Utility functions for SLURM configuration and cluster settings.
 """
 
 from enum import Enum
-import os, platform
+import os
 import socket
 import typing as tp
 
