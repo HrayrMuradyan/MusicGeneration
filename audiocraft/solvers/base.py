@@ -40,6 +40,7 @@ class StandardSolver(ABC, flashy.BaseSolver):
         self.logger.info(f"Instantiating solver {self.__class__.__name__} for XP {self.xp.sig}")
         self.logger.info(f"All XP logs are stored in {self.xp.folder}")
         self.cfg = cfg
+        self.memory_saver = cfg.memory_saver
         self.device = cfg.device
         self.model: nn.Module
         self._continue_best_source_keys = ['best_state', 'fsdp_best_state']
@@ -61,7 +62,7 @@ class StandardSolver(ABC, flashy.BaseSolver):
         elif self.cfg.autocast:
             dtype_best = getattr(torch, self.cfg.autocast_dtype)  # type: ignore
             assert isinstance(dtype_best, torch.dtype)
-        self.best_state: BestStateDictManager = BestStateDictManager(dtype=dtype_best)
+        self.best_state: BestStateDictManager = BestStateDictManager(dtype=dtype_best, memory_saver=self.memory_saver)
         # Hacky support for keeping a copy of the full best state in rank0.
         self.fsdp_best_state: tp.Dict[str, tp.Any] = {}
         self.register_stateful('best_state', 'fsdp_best_state')  # register best_state object to keep it in state_dict
@@ -551,7 +552,7 @@ class StandardSolver(ABC, flashy.BaseSolver):
         average = flashy.averager()  # epoch wise average
         instant_average = flashy.averager()  # average between two logging
         metrics: dict = {}
-
+        print(f'KM: Length of dataloader: {len(loader)}')
         with self.profiler, self.deadlock_detect:  # profiler will only run for the first 20 updates.
             self.logger.warning("*"*50 + "With Profiler and Deadlock Detect") # HRAYR
             for idx, batch in enumerate(lp):

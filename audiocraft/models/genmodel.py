@@ -43,7 +43,8 @@ class BaseGenModel(ABC):
         self.lm = lm
         self.cfg: tp.Optional[omegaconf.DictConfig] = None
         # Just to be safe, let's put everything in eval mode.
-        self.compression_model.eval()
+        if self.compression_model is not None:
+            self.compression_model.eval()
         self.lm.eval()
 
         if hasattr(lm, 'cfg'):
@@ -51,7 +52,7 @@ class BaseGenModel(ABC):
             assert isinstance(cfg, omegaconf.DictConfig)
             self.cfg = cfg
 
-        if self.cfg is not None:
+        if (self.cfg is not None) and (self.compression_model is not None):
             self.compression_model = get_wrapped_compression_model(self.compression_model, self.cfg)
 
         if max_duration is None:

@@ -53,7 +53,7 @@ class MusicGen(BaseGenModel):
         self.set_generation_params(duration=15)  # default duration
 
     @staticmethod
-    def get_pretrained(name: str = 'facebook/musicgen-melody', device=None):
+    def get_pretrained(name: str = 'facebook/musicgen-melody', device=None, memory_saver=False):
         """Return pretrained model, we provide four models:
         - facebook/musicgen-small (300M), text to music,
           # see: https://huggingface.co/facebook/musicgen-small
@@ -84,7 +84,7 @@ class MusicGen(BaseGenModel):
             name = _HF_MODEL_CHECKPOINTS_MAP[name]
 
         lm = load_lm_model(name, device=device)
-        compression_model = load_compression_model(name, device=device)
+        compression_model = None if memory_saver else load_compression_model(name, device=device)
         if 'self_wav' in lm.condition_provider.conditioners:
             lm.condition_provider.conditioners['self_wav'].match_len_on_eval = True
             lm.condition_provider.conditioners['self_wav']._use_masking = False

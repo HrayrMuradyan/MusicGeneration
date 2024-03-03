@@ -4,6 +4,7 @@
 # Please don't update this file directly. Instead use distinct configuration files
 # to override the below configuration.
 solver: ???
+memory_saver: false
 
 fsdp:
   use: false  # should we use FSDP.
@@ -23,7 +24,7 @@ deadlock:
 
 dataset:
   batch_size: ???
-  num_workers: 10
+  num_workers: 4
   segment_duration: null
   num_samples: null
   return_info: false

@@ -37,6 +37,7 @@ class DatasetType(Enum):
     AUDIO = "audio"
     MUSIC = "music"
     SOUND = "sound"
+    MUSIC_MEMORY_SAVER = "music_memory_saver"
 
 
 def get_solver(cfg: omegaconf.DictConfig) -> StandardSolver:
@@ -349,6 +350,9 @@ def get_audio_datasets(cfg: omegaconf.DictConfig,
             dataset = data.sound_dataset.SoundDataset.from_meta(path, **kwargs)
         elif dataset_type == DatasetType.AUDIO:
             dataset = data.info_audio_dataset.InfoAudioDataset.from_meta(path, return_info=return_info, **kwargs)
+        elif dataset_type == DatasetType.MUSIC_MEMORY_SAVER:
+            random_sample_selection = getattr(cfg, "random_sample_selection", True)
+            dataset = data.music_dataset.MusicTensorDataset(path, random_sample_selection)
         else:
             raise ValueError(f"Dataset type is unsupported: {dataset_type}")
 
@@ -358,7 +362,7 @@ def get_audio_datasets(cfg: omegaconf.DictConfig,
             batch_size=batch_size,
             num_workers=num_workers,
             seed=seed,
-            collate_fn=dataset.collater if return_info else None,
+            collate_fn=dataset.collater if return_info and (dataset_type != DatasetType.MUSIC_MEMORY_SAVER) else None,
             shuffle=shuffle,
         )
         dataloaders[split] = loader

@@ -33,9 +33,9 @@ class MusicGenSolver(base.StandardSolver):
 
     Used in: https://arxiv.org/abs/2306.05284
     """
-    DATASET_TYPE: builders.DatasetType = builders.DatasetType.MUSIC
 
     def __init__(self, cfg: omegaconf.DictConfig):
+        self.DATASET_TYPE = builders.DatasetType.MUSIC if not cfg.memory_saver else builders.DatasetType.MUSIC_MEMORY_SAVER
         super().__init__(cfg)
         # easier access to sampling parameters
         self.generation_params = {
@@ -114,29 +114,31 @@ class MusicGenSolver(base.StandardSolver):
         """Instantiate models and optimizer."""
         # we can potentially not use all quantizers with which the EnCodec model was trained
         # (e.g. we trained the model with quantizers dropout)
-        self.compression_model = CompressionSolver.wrapped_model_from_checkpoint(
-            self.cfg, self.cfg.compression_model_checkpoint, device=self.device)
-        assert self.compression_model.sample_rate == self.cfg.sample_rate, (
-            f"Compression model sample rate is {self.compression_model.sample_rate} but "
-            f"Solver sample rate is {self.cfg.sample_rate}."
+        if not self.cfg.memory_saver:
+            self.compression_model = CompressionSolver.wrapped_model_from_checkpoint(
+                self.cfg, self.cfg.compression_model_checkpoint, device=self.device)
+            assert self.compression_model.sample_rate == self.cfg.sample_rate, (
+                f"Compression model sample rate is {self.compression_model.sample_rate} but "
+                f"Solver sample rate is {self.cfg.sample_rate}."
+                )
+            # ensure we have matching configuration between LM and compression model
+            assert self.cfg.transformer_lm.card == self.compression_model.cardinality, (
+                "Cardinalities of the LM and compression model don't match: ",
+                f"LM cardinality is {self.cfg.transformer_lm.card} vs ",
+                f"compression model cardinality is {self.compression_model.cardinality}"
             )
-        # ensure we have matching configuration between LM and compression model
-        assert self.cfg.transformer_lm.card == self.compression_model.cardinality, (
-            "Cardinalities of the LM and compression model don't match: ",
-            f"LM cardinality is {self.cfg.transformer_lm.card} vs ",
-            f"compression model cardinality is {self.compression_model.cardinality}"
-        )
-        assert self.cfg.transformer_lm.n_q == self.compression_model.num_codebooks, (
-            "Numbers of codebooks of the LM and compression models don't match: ",
-            f"LM number of codebooks is {self.cfg.transformer_lm.n_q} vs ",
-            f"compression model numer of codebooks is {self.compression_model.num_codebooks}"
-        )
-        self.logger.info("Compression model has %d codebooks with %d cardinality, and a framerate of %d",
-                         self.compression_model.num_codebooks, self.compression_model.cardinality,
-                         self.compression_model.frame_rate)
+            assert self.cfg.transformer_lm.n_q == self.compression_model.num_codebooks, (
+                "Numbers of codebooks of the LM and compression models don't match: ",
+                f"LM number of codebooks is {self.cfg.transformer_lm.n_q} vs ",
+                f"compression model numer of codebooks is {self.compression_model.num_codebooks}"
+            )
+            self.logger.info("Compression model has %d codebooks with %d cardinality, and a framerate of %d",
+                             self.compression_model.num_codebooks, self.compression_model.cardinality,
+                             self.compression_model.frame_rate)
+        else:
+            self.compression_model = None
         # instantiate LM model
         self.model: models.LMModel = models.builders.get_lm_model(self.cfg).to(self.device)
-
 
         if self.cfg.fsdp.use:
             assert not self.cfg.autocast, "Cannot use autocast with fsdp"
@@ -351,18 +353,32 @@ class MusicGenSolver(base.StandardSolver):
 
         return condition_tensors, audio_tokens, padding_mask
 
-    def run_step(self, idx: int, batch: tp.Tuple[torch.Tensor, tp.List[SegmentWithAttributes]], metrics: dict) -> dict:
-        """Perform one training or valid step on a given batch."""
+    def run_step(self, idx: int, batch: tp.Tuple[torch.Tensor, tp.Dict[str, torch.Tensor]], metrics: dict) -> dict:
+        """Perform one training or valid step on a given batch.
+
+        KM UPD: batch is tuple of T5 encoding input_ids and dictionary containing condition_tensors, audio_tokens and padding_mask"""
         check_synchronization_points = idx == 1 and self.device == 'cuda'
 
-        condition_tensors, audio_tokens, padding_mask = self._prepare_tokens_and_attributes(
-            batch, check_synchronization_points)
+        if self.cfg.memory_saver:
+            audio_tokens, conditions = batch
+            condition_tensors, padding_mask = conditions['condition_tensors'], conditions['padding_mask']
+            audio_tokens = audio_tokens.to(self.device)
+            for k, v in condition_tensors.items():
+                if isinstance(v, torch.Tensor):
+                    condition_tensors[k] = condition_tensors[k].to(self.device)
+                elif isinstance(v, list) or isinstance(v, tuple):
+                    condition_tensors[k] = tuple(
+                        [condition_tensors[k][i].to(self.device) for i in range(len(condition_tensors[k]))])
+        else:
+            condition_tensors, audio_tokens, padding_mask = self._prepare_tokens_and_attributes(
+                batch, check_synchronization_points)
+
+        padding_mask = padding_mask.to(self.device)
 
         self.deadlock_detect.update('tokens_and_conditions')
 
         if check_synchronization_points:
             torch.cuda.set_sync_debug_mode('warn')
-
 
         with self.autocast:
             # self.logger.warning("*"*50 + "MusicGen - RunStep - With Autocast") # HRAYR
@@ -603,7 +619,6 @@ class MusicGenSolver(base.StandardSolver):
             self._cached_batch_writer.start_epoch(self.epoch)
         if self._cached_batch_loader is None:
             dataset = get_dataset_from_loader(self.dataloaders['train'])
-            assert isinstance(dataset, AudioDataset)
             dataset.current_epoch = self.epoch
         else:
             self._cached_batch_loader.start_epoch(self.epoch)

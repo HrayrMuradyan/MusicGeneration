@@ -131,6 +131,7 @@ def init_seed_and_system(cfg):
 
 @hydra_main(config_path='../config', config_name='config', version_base='1.1')
 def main(cfg):
+    print(cfg)
     init_seed_and_system(cfg)
 
     # Setup logging both to XP specific folder, and to stderr.

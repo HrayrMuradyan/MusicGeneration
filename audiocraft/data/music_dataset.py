@@ -28,7 +28,8 @@ from ..modules.conditioners import (
     WavCondition,
 )
 from ..utils.utils import warn_once
-
+import time
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -268,3 +269,53 @@ def get_bpm(value: tp.Optional[str]) -> tp.Optional[float]:
         return float(value)
     except ValueError:
         return None
+
+
+class MusicTensorDataset(torch.utils.data.Dataset):
+    """
+    MusicTensorDataset was designed to read pre-processed pairs of audio and conditional attributes.
+
+    Args:
+        path (Path or str): Path to the folder with pairs of samples. The path has to have
+            folders each having two files, named encodec_encoding.pt and attributes.pt
+        random(bool): Whether to getitem randomly or complying with idx
+    """
+    def __init__(self, path, randomized=True):
+        logging.info(f'KM: Creating MusicTensorDataset with path: {path} with random = {randomized}')
+        self.path = path
+
+        self.folders = self.get_valid_folders()
+        self.random = randomized
+
+    def get_valid_folders(self):
+        """
+        Iterates through the folders located in the self.path and gets the list of valid folders.
+        Each valid folder has to have two files, named encodec_encoding.pt and attributes.pt
+        """
+        folders = []
+        for folder in os.listdir(self.path):
+            if os.path.isdir(os.path.join(self.path, folder)):
+                folder_full_path = os.path.join(self.path, folder)
+                files_within_folder = os.listdir(folder_full_path)
+                print(files_within_folder)
+                if set(files_within_folder) == {'encodec_encoding.pt', 'attributes.pt'}:
+                    folders.append(folder)
+
+        return folders
+
+    def __len__(self):
+        return len(self.folders)
+
+    def __getitem__(self, idx):
+        """
+        If self.random is True randomly selects any folder, without looking into idx
+        (like in the original implementation), otherwise, returns the example at the idx index
+        """
+
+        if self.random:
+            folder_index = torch.randint(len(self.folders), (1,)).item()
+        else:
+            folder_index = idx
+
+        folder = os.path.join(self.path, self.folders[folder_index])
+        return torch.load(os.path.join(folder, 'encodec_encoding.pt')), torch.load(os.path.join(folder, 'attributes.pt'))
