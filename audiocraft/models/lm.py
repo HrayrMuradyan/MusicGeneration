@@ -397,6 +397,7 @@ class LMModel(StreamingModule):
     def generate(self,
                  prompt: tp.Optional[torch.Tensor] = None,
                  conditions: tp.List[ConditioningAttributes] = [],
+                 condition_tensors: CFGConditions = {},
                  num_samples: tp.Optional[int] = None,
                  max_gen_len: int = 256,
                  use_sampling: bool = True,
@@ -414,7 +415,8 @@ class LMModel(StreamingModule):
 
         Args:
             prompt (torch.Tensor, optional): Prompt tokens of shape [B, K, T].
-            conditions_tensors (list of ConditioningAttributes, optional): List of conditions.
+            conditions (list of ConditioningAttributes, optional): List of conditions.
+            condition_tensors (dict of tensors, optional): KM: Should be same as the `cfg_conditions` when conditions are provided
             num_samples (int, optional): Number of samples to generate when no prompt and no conditions are given.
             max_gen_len (int): Maximum generation length.
             use_sampling (bool): Whether to use a sampling strategy or not.
@@ -441,6 +443,8 @@ class LMModel(StreamingModule):
             possible_num_samples.append(prompt.shape[0])
         elif conditions:
             possible_num_samples.append(len(conditions))
+        elif condition_tensors:
+            possible_num_samples.append(condition_tensors['description'][0].shape[0]//2) # Specific to train as adds null condition to list of conditions
         else:
             possible_num_samples.append(1)
         assert [x == possible_num_samples[0] for x in possible_num_samples], "Inconsistent inputs shapes"
@@ -455,7 +459,7 @@ class LMModel(StreamingModule):
         # We also support doing two different passes, in particular to ensure that
         # the padding structure is exactly the same between train and test.
         # With a batch size of 1, this can be slower though.
-        cfg_conditions: CFGConditions
+        cfg_conditions: CFGConditions = condition_tensors
         two_step_cfg = self.two_step_cfg if two_step_cfg is None else two_step_cfg
         if conditions:
             null_conditions = ClassifierFreeGuidanceDropout(p=1.0)(conditions)
@@ -468,8 +472,6 @@ class LMModel(StreamingModule):
                 conditions = conditions + null_conditions
                 tokenized = self.condition_provider.tokenize(conditions)
                 cfg_conditions = self.condition_provider(tokenized)
-        else:
-            cfg_conditions = {}
 
         if prompt is None:
             assert num_samples > 0

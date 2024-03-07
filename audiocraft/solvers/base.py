@@ -40,7 +40,8 @@ class StandardSolver(ABC, flashy.BaseSolver):
         self.logger.info(f"Instantiating solver {self.__class__.__name__} for XP {self.xp.sig}")
         self.logger.info(f"All XP logs are stored in {self.xp.folder}")
         self.cfg = cfg
-        self.memory_saver = cfg.memory_saver
+        self.memory_saver = cfg.memory_saver.enable
+        self.compression_frame_rate = cfg.memory_saver.compression_frame_rate
         self.device = cfg.device
         self.model: nn.Module
         self._continue_best_source_keys = ['best_state', 'fsdp_best_state']

@@ -35,7 +35,7 @@ class MusicGenSolver(base.StandardSolver):
     """
 
     def __init__(self, cfg: omegaconf.DictConfig):
-        self.DATASET_TYPE = builders.DatasetType.MUSIC if not cfg.memory_saver else builders.DatasetType.MUSIC_MEMORY_SAVER
+        self.DATASET_TYPE = builders.DatasetType.MUSIC if not cfg.memory_saver.enable else builders.DatasetType.MUSIC_MEMORY_SAVER
         super().__init__(cfg)
         # easier access to sampling parameters
         self.generation_params = {
@@ -114,7 +114,7 @@ class MusicGenSolver(base.StandardSolver):
         """Instantiate models and optimizer."""
         # we can potentially not use all quantizers with which the EnCodec model was trained
         # (e.g. we trained the model with quantizers dropout)
-        if not self.cfg.memory_saver:
+        if not self.cfg.memory_saver.enable:
             self.compression_model = CompressionSolver.wrapped_model_from_checkpoint(
                 self.cfg, self.cfg.compression_model_checkpoint, device=self.device)
             assert self.compression_model.sample_rate == self.cfg.sample_rate, (
@@ -359,7 +359,7 @@ class MusicGenSolver(base.StandardSolver):
         KM UPD: batch is tuple of T5 encoding input_ids and dictionary containing condition_tensors, audio_tokens and padding_mask"""
         check_synchronization_points = idx == 1 and self.device == 'cuda'
 
-        if self.cfg.memory_saver:
+        if self.cfg.memory_saver.enable:
             audio_tokens, conditions = batch
             condition_tensors, padding_mask = conditions['condition_tensors'], conditions['padding_mask']
             audio_tokens = audio_tokens.to(self.device)
@@ -461,43 +461,62 @@ class MusicGenSolver(base.StandardSolver):
                 and the prompt along with additional information.
         """
         bench_start = time.time()
-        audio, meta = batch
-        assert audio.size(0) == len(meta), (
-            f"Mismatch between number of items in audio batch ({audio.size(0)})",
-            f" and in metadata ({len(meta)})"
-        )
-        # prepare attributes
-        attributes = [x.to_condition_attributes() for x in meta]
-        # TODO: Add dropout for chroma?
+        if not self.memory_saver:
+            audio, meta = batch
+            assert audio.size(0) == len(meta), (
+                f"Mismatch between number of items in audio batch ({audio.size(0)})",
+                f" and in metadata ({len(meta)})"
+            )
+            # prepare attributes
+            attributes = [x.to_condition_attributes() for x in meta]
+            # TODO: Add dropout for chroma?
 
-        # prepare audio prompt
-        if prompt_duration is None:
+            # prepare audio prompt
+            if prompt_duration is None:
+                prompt_audio = None
+            else:
+                assert prompt_duration < gen_duration, "Prompt duration must be lower than target generation duration"
+                prompt_audio_frames = int(prompt_duration * self.compression_model.sample_rate)
+                prompt_audio = audio[..., :prompt_audio_frames]
+
+            # get audio tokens from compression model
+            if prompt_audio is None or prompt_audio.nelement() == 0:
+                num_samples = len(attributes)
+                prompt_tokens = None
+            else:
+                num_samples = None
+                prompt_audio = prompt_audio.to(self.device)
+                prompt_tokens, scale = self.compression_model.encode(prompt_audio)
+                assert scale is None, "Compression model in MusicGen should not require rescaling."
+
+            condition_tensors = None
+        else:
+            _, conditions = batch
+            prompt_tokens = None #KM TODO: Add this for continuation. Not hard. take batch[0](i.e. audio_tokens)[:, :x]
+            attributes = None
             prompt_audio = None
-        else:
-            assert prompt_duration < gen_duration, "Prompt duration must be lower than target generation duration"
-            prompt_audio_frames = int(prompt_duration * self.compression_model.sample_rate)
-            prompt_audio = audio[..., :prompt_audio_frames]
-
-        # get audio tokens from compression model
-        if prompt_audio is None or prompt_audio.nelement() == 0:
-            num_samples = len(attributes)
-            prompt_tokens = None
-        else:
-            num_samples = None
-            prompt_audio = prompt_audio.to(self.device)
-            prompt_tokens, scale = self.compression_model.encode(prompt_audio)
-            assert scale is None, "Compression model in MusicGen should not require rescaling."
+            audio = None
+            condition_tensors, padding_mask = conditions['condition_tensors'], conditions['padding_mask']
+            num_samples = condition_tensors['description'][0].shape[0]
+            # audio_tokens = audio_tokens.to(self.device)
+            for k, v in condition_tensors.items():
+                if isinstance(v, torch.Tensor):
+                    condition_tensors[k] = condition_tensors[k].to(self.device)
+                elif isinstance(v, list) or isinstance(v, tuple):
+                    condition_tensors[k] = tuple(
+                        [condition_tensors[k][i].to(self.device) for i in range(len(condition_tensors[k]))])
 
         # generate by sampling from the LM
-        with self.autocast:
-            total_gen_len = math.ceil(gen_duration * self.compression_model.frame_rate)
+        with (self.autocast):
+            total_gen_len = math.ceil(gen_duration * self.compression_model.frame_rate) if not self.memory_saver else\
+                math.ceil(gen_duration * self.compression_frame_rate)
             gen_tokens = self.model.generate(
-                prompt_tokens, attributes, max_gen_len=total_gen_len,
+                prompt_tokens, attributes, condition_tensors, max_gen_len=total_gen_len,
                 num_samples=num_samples, **self.generation_params)
 
         # generate audio from tokens
         assert gen_tokens.dim() == 3
-        gen_audio = self.compression_model.decode(gen_tokens, None)
+        gen_audio = self.compression_model.decode(gen_tokens, None) if not self.memory_saver else None
 
         bench_end = time.time()
         gen_outputs = {
@@ -520,9 +539,10 @@ class MusicGenSolver(base.StandardSolver):
         lp = self.log_progress(generate_stage_name, loader, total=updates, updates=self.log_updates)
 
         dataset = get_dataset_from_loader(loader)
-        dataset_duration = dataset.segment_duration
+        print('Config dataset: ', self.cfg.dataset)
+        dataset_duration = dataset.segment_duration if isinstance(dataset, AudioDataset) else self.cfg.dataset.segment_duration
         assert dataset_duration is not None
-        assert isinstance(dataset, AudioDataset)
+        # assert isinstance(dataset, AudioDataset)
         target_duration = self.cfg.generate.lm.gen_duration
         prompt_duration = self.cfg.generate.lm.prompt_duration
         if target_duration is None:
@@ -559,42 +579,57 @@ class MusicGenSolver(base.StandardSolver):
         metrics: dict = {}
         average = flashy.averager()
         for batch in lp:
-            audio, meta = batch
-            # metadata for sample manager
-            hydrated_conditions = get_hydrated_conditions(meta)
-            sample_generation_params = {
-                **{f'classifier_free_guidance_{k}': v for k, v in self.cfg.classifier_free_guidance.items()},
-                **self.generation_params
-            }
-            if self.cfg.generate.lm.unprompted_samples:
-                if self.cfg.generate.lm.gen_gt_samples:
-                    # get the ground truth instead of generation
-                    self.logger.warn(
-                        "Use ground truth instead of audio generation as generate.lm.gen_gt_samples=true")
-                    gen_unprompted_audio = audio
-                    rtf = 1.
-                else:
-                    gen_unprompted_outputs = self.run_generate_step(
-                        batch, gen_duration=target_duration, prompt_duration=None,
+            if not self.memory_saver:
+                audio, meta = batch
+                # metadata for sample manager
+                hydrated_conditions = get_hydrated_conditions(meta)
+                sample_generation_params = {
+                    **{f'classifier_free_guidance_{k}': v for k, v in self.cfg.classifier_free_guidance.items()},
+                    **self.generation_params
+                }
+
+                if self.cfg.generate.lm.unprompted_samples:
+                    if self.cfg.generate.lm.gen_gt_samples:
+                        # get the ground truth instead of generation
+                        self.logger.warn(
+                            "Use ground truth instead of audio generation as generate.lm.gen_gt_samples=true")
+                        gen_unprompted_audio = audio
+                        rtf = 1.
+                    else:
+                        gen_unprompted_outputs = self.run_generate_step(
+                            batch, gen_duration=target_duration, prompt_duration=None,
+                            **self.generation_params)
+                        gen_unprompted_audio = gen_unprompted_outputs['gen_audio'].cpu()
+                        rtf = gen_unprompted_outputs['rtf']
+                    sample_manager.add_samples(
+                        gen_unprompted_audio, self.epoch, hydrated_conditions,
+                        ground_truth_wavs=audio, generation_args=sample_generation_params)
+
+                if self.cfg.generate.lm.prompted_samples:  # KM TODO: Currently doesn't support continuation
+                    gen_outputs = self.run_generate_step(
+                        batch, gen_duration=target_duration, prompt_duration=prompt_duration,
                         **self.generation_params)
-                    gen_unprompted_audio = gen_unprompted_outputs['gen_audio'].cpu()
-                    rtf = gen_unprompted_outputs['rtf']
-                sample_manager.add_samples(
-                    gen_unprompted_audio, self.epoch, hydrated_conditions,
-                    ground_truth_wavs=audio, generation_args=sample_generation_params)
+                    gen_audio = gen_outputs['gen_audio'].cpu()
+                    prompt_audio = gen_outputs['prompt_audio'].cpu()
+                    sample_manager.add_samples(
+                        gen_audio, self.epoch, hydrated_conditions,
+                        prompt_wavs=prompt_audio, ground_truth_wavs=audio,
+                        generation_args=sample_generation_params)
+                metrics['rtf'] = rtf
 
-            if self.cfg.generate.lm.prompted_samples:
-                gen_outputs = self.run_generate_step(
-                    batch, gen_duration=target_duration, prompt_duration=prompt_duration,
-                    **self.generation_params)
-                gen_audio = gen_outputs['gen_audio'].cpu()
-                prompt_audio = gen_outputs['prompt_audio'].cpu()
-                sample_manager.add_samples(
-                    gen_audio, self.epoch, hydrated_conditions,
-                    prompt_wavs=prompt_audio, ground_truth_wavs=audio,
-                    generation_args=sample_generation_params)
+            else:
+                hydrated_conditions, sample_generation_params = None, None
+                if self.cfg.generate.lm.unprompted_samples:
+                    if not self.cfg.generate.lm.gen_gt_samples: # KM TODO Only supports this one for now
+                        gen_unprompted_outputs = self.run_generate_step(
+                            batch, gen_duration=target_duration, prompt_duration=None,
+                            **self.generation_params)
+                        rtf = -1 # TODO KM Check what this is and if there is workaround
+                        sample_manager.add_samples(
+                            gen_unprompted_outputs['gen_tokens'].cpu(), self.epoch, hydrated_conditions,
+                            ground_truth_wavs=None, generation_args=sample_generation_params, memory_saver=self.memory_saver)
+                        metrics['rtf'] = rtf
 
-            metrics['rtf'] = rtf
             metrics = average(metrics)
 
         flashy.distrib.barrier()

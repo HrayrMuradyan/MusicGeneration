@@ -18,7 +18,9 @@ autocast_dtype: float16
 compression_model_checkpoint: //pretrained/facebook/encodec_32khz
 
 #KM NEW PARAMETERS
-memory_saver: false
+memory_saver:
+  enable: true
+  compression_frame_rate: 50
 
 channels: 1
 sample_rate: 32000
@@ -33,6 +35,7 @@ dataset:
   sample_on_duration: false  # Uniform sampling all the way
 
 generate:
+  every: 2
   lm:
     use_sampling: true
     top_k: 250

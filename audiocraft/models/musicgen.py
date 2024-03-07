@@ -20,8 +20,10 @@ from .lm import LMModel
 from .builders import get_debug_compression_model, get_debug_lm_model
 from .loaders import load_compression_model, load_lm_model
 from ..data.audio_utils import convert_audio
-from ..modules.conditioners import ConditioningAttributes, WavCondition
+from ..modules.conditioners import ConditioningAttributes, WavCondition, ConditionType
 
+ConditionTensors = tp.Dict[str, ConditionType]
+CFGConditions = tp.Union[ConditionTensors, tp.Tuple[ConditionTensors, ConditionTensors]]
 
 MelodyList = tp.List[tp.Optional[torch.Tensor]]
 MelodyType = tp.Union[torch.Tensor, MelodyList]
@@ -83,7 +85,7 @@ class MusicGen(BaseGenModel):
                 f"Please use full pre-trained id instead: facebook/musicgen-{name}")
             name = _HF_MODEL_CHECKPOINTS_MAP[name]
 
-        lm = load_lm_model(name, device=device)
+        lm = load_lm_model(name, device=device, memory_saver=memory_saver)
         compression_model = None if memory_saver else load_compression_model(name, device=device)
         if 'self_wav' in lm.condition_provider.conditioners:
             lm.condition_provider.conditioners['self_wav'].match_len_on_eval = True
@@ -220,13 +222,16 @@ class MusicGen(BaseGenModel):
         return attributes, prompt_tokens
 
     def _generate_tokens(self, attributes: tp.List[ConditioningAttributes],
-                         prompt_tokens: tp.Optional[torch.Tensor], progress: bool = False) -> torch.Tensor:
+                         prompt_tokens: tp.Optional[torch.Tensor], progress: bool = False,
+                         condition_tensors: tp.Optional[CFGConditions] = {}) -> torch.Tensor:
         """Generate discrete audio tokens given audio prompt and/or conditions.
 
         Args:
             attributes (list of ConditioningAttributes): Conditions used for generation (text/melody).
             prompt_tokens (torch.Tensor, optional): Audio prompt used for continuation.
             progress (bool, optional): Flag to display progress of the generation process. Defaults to False.
+            condition_tensors (CFGConditions): Pre-processed attributes as an alternative to providing attributes.
+
         Returns:
             torch.Tensor: Generated audio, of shape [B, C, T], T is defined by the generation params.
         """
@@ -255,10 +260,11 @@ class MusicGen(BaseGenModel):
             # generate by sampling from LM, simple case.
             with self.autocast:
                 gen_tokens = self.lm.generate(
-                    prompt_tokens, attributes,
+                    prompt_tokens, attributes, condition_tensors,
                     callback=callback, max_gen_len=total_gen_len, **self.generation_params)
 
         else:
+            # KM: TODO NEEDS SOME WORK REGARDING missing attributes
             # now this gets a bit messier, we need to handle prompts,
             # melody conditioning etc.
             ref_wavs = [attr.wav['self_wav'] for attr in attributes]
@@ -295,7 +301,7 @@ class MusicGen(BaseGenModel):
                         [None], [0.])
                 with self.autocast:
                     gen_tokens = self.lm.generate(
-                        prompt_tokens, attributes,
+                        prompt_tokens, attributes, condition_tensors,
                         callback=callback, max_gen_len=max_gen_len, **self.generation_params)
                 if prompt_tokens is None:
                     all_tokens.append(gen_tokens)
