@@ -1,7 +1,6 @@
 from omegaconf import OmegaConf, DictConfig
 import torch
 import torch.nn.functional as F
-import typing as tp
 from pathlib import Path
 import soundfile
 import json
@@ -12,12 +11,12 @@ from audiocraft.utils.utils import get_loader, dict_from_config
 
 
 from audiocraft.solvers.builders import get_audio_datasets, DatasetType
-from audiocraft.models.builders import get_encodec_autoencoder, get_quantizer
+from audiocraft.models.builders import get_compression_model
 
 
 from audiocraft.data.audio import audio_read
 from audiocraft.data.audio_dataset import SegmentInfo
-from audiocraft.data.music_dataset import MusicInfo
+from audiocraft.data.music_dataset import MusicInfo, augment_music_info_description
 from audiocraft.data.audio_utils import convert_audio
 from audiocraft.data.info_audio_dataset import AudioInfo
 
@@ -25,7 +24,8 @@ from audiocraft.modules.conditioners import (
     T5Conditioner, 
     ConditioningProvider,
     WavCondition, 
-    BaseConditioner
+    BaseConditioner,
+    JointEmbedCondition
 )
 
 from audiocraft.models.encodec import EncodecModel
@@ -47,8 +47,8 @@ class PreprocessData:
 		self.target_channels = self.cfg.channels
 		self.segment_duration = self.cfg.dataset.segment_duration
 		self.datasets = self.build_datasets()
-		self.load_conditioner()
-		self.load_encodec()
+		self.condition_provider = self.load_conditioner()
+		self.encodec_model = self.load_encodec()
 
 		self.processing_info = ProcessingInfo()
 
@@ -90,13 +90,13 @@ class PreprocessData:
 		condition_provider_args = dict_cfg.pop('args', {})
 		condition_provider_args.pop('merge_text_conditions_p', None)
 		condition_provider_args.pop('drop_desc_p', None)
+	
+		cond_cfg = dict_cfg['description']
+		model_type = cond_cfg['model']
+		model_args = cond_cfg[model_type]
+		conditioners['description'] = T5Conditioner(output_dim=self.cfg.transformer_lm['dim'], device=self.cfg.device, **model_args)
 
-		for cond, cond_cfg in dict_cfg.items():
-			model_type = cond_cfg['model']
-			model_args = cond_cfg[model_type]
-			conditioners[str(cond)] = T5Conditioner(output_dim=self.cfg.transformer_lm['dim'], device=self.cfg.device, **model_args)
-
-		self.load_conditioner_state_dict(conditioners, condition_provider_args)
+		return self.load_conditioner_state_dict(conditioners, condition_provider_args)
 
 		# cfg_dropout = ClassifierFreeGuidanceDropout(p=cfg.classifier_free_guidance.training_dropout)
 		# att_dropout = AttributeDropout(p=cfg.attribute_dropout)
@@ -114,30 +114,20 @@ class PreprocessData:
 
 		conditioners['description'].output_proj.load_state_dict({'weight': output_proj_weight, 'bias': output_proj_bias})
 
-		self.condition_provider = ConditioningProvider(conditioners, device=self.cfg.device, **condition_provider_args).to(self.cfg.device)
+		condition_provider = ConditioningProvider(conditioners, device=self.cfg.device, **condition_provider_args).to(self.cfg.device)
+
+		return condition_provider
 
 	def load_encodec(self):
 		
 		compression_cfg = OmegaConf.create(self.compression_ckpt['xp.cfg'])
 
-		kwargs = dict_from_config(getattr(compression_cfg, 'encodec'))
+		encodec_model = get_compression_model(compression_cfg) 
 
-		encoder_name = kwargs.pop('autoencoder')
-		quantizer_name = kwargs.pop('quantizer')
+		encodec_model.load_state_dict(self.compression_ckpt['best_state'])
+		encodec_model.eval()
 
-		encoder, decoder = get_encodec_autoencoder(encoder_name, compression_cfg)
-		quantizer = get_quantizer(quantizer_name, compression_cfg, encoder.dimension)
-
-		frame_rate = kwargs['sample_rate'] // encoder.hop_length
-		renormalize = kwargs.pop('renormalize', False)
-
-		kwargs.pop('renorm', None)
-
-		self.encodec_model = EncodecModel(encoder, decoder, quantizer, 
-						frame_rate=frame_rate, renormalize=renormalize, **kwargs).to(compression_cfg.device)
-
-		self.encodec_model.load_state_dict(self.compression_ckpt['best_state'])
-		self.encodec_model.eval()
+		return encodec_model
 
 
 
@@ -154,7 +144,7 @@ class PreprocessData:
 			target_frames = int(self.segment_duration * self.target_sr)
 
 			if loader.dataset.pad:
-				padding_amount = -min(0, n_frames - target_frames)
+				padding_amount = max(0, target_frames - n_frames)
 				self.processing_info.padding_info(int(padding_amount/self.target_sr), target_frames)
 				out = F.pad(out, (0, padding_amount))
 				n_frames = out.shape[-1]
@@ -183,18 +173,20 @@ class PreprocessData:
 			slicing = False if n_frames/self.target_sr <= self.segment_duration else True
 			self.processing_info.slicing_info(slicing)
 
+			if save_path:
+				pure_path = file_meta[it].path
+				file_name = os.path.splitext(os.path.basename(pure_path))[0]
+
 			if slicing:
 				shift_samples = int(time_shift * self.target_sr)
-				file_name = file_meta[it].path.split('\\')[-1][:-4]
 				for i, start in enumerate(range(0, n_frames - target_frames + 1, shift_samples)):
 					end = start + target_frames
 					clip = out[:, start:end]
 
 					condition_tensors, audio_tokens, padding_mask = self.prepare_attributes(clip, music_info)
 
-					file_name_i = file_name + f'_{i+1}'
-
 					if save_path:
+						file_name_i = file_name + f'_{i+1}'
 						self.save(condition_tensors, audio_tokens, padding_mask, data_split=data_split, file_name=file_name_i, save_path=save_path)
 				if save_path:
 					self.processing_info.save_info(file_name, i=i)
@@ -203,19 +195,24 @@ class PreprocessData:
 			else:
 				condition_tensors, audio_tokens, padding_mask = self.prepare_attributes(out, music_info)
 				if save_path:
-					file_name = file_meta[it].path.split('\\')[-1][:-4]
 					self.save(condition_tensors, audio_tokens, padding_mask, data_split=data_split, file_name=file_name, save_path=save_path)
 					self.processing_info.save_info(file_name)
 			self.processing_info.mus_end()
 		self.processing_info.end_of_info()
 
 	def save(self, condition_tensors, audio_tokens, padding_mask, data_split, file_name, save_path):
+
+		condition_tensors['description'] = tuple(tens.cpu().detach().squeeze(0) for tens in condition_tensors['description'])
+		audio_tokens = audio_tokens.cpu().detach().squeeze(0)
+		padding_mask = padding_mask.cpu().detach().squeeze(0)
+
+		attributes_dict = {'condition_tensors': condition_tensors, 'padding_mask': padding_mask}
+
 		path_to_save = save_path + data_split + '/'+ file_name
 		if not os.path.exists(path_to_save):
 			os.makedirs(path_to_save)
-		torch.save(condition_tensors, path_to_save + '/condition_tensor.pt')
-		torch.save(audio_tokens, path_to_save + '/audio_tokens.pt')
-		torch.save(padding_mask, path_to_save + '/padding_mask.pt')
+		torch.save(attributes_dict, path_to_save + '/attributes.pt')
+		torch.save(audio_tokens, path_to_save + '/encodec_encoding.pt')
 
 
 
@@ -266,6 +263,16 @@ class ProcessingInfo:
 	def end_of_info(self):
 		print('\nEnd of the processing\n')
 		print("="*100)
+
+
+
+
+
+
+
+
+
+
 
 
 
