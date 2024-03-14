@@ -20,6 +20,7 @@ from dora import git_save, hydra_main, XP
 import flashy
 import hydra
 import omegaconf
+import platform
 
 from .environment import AudioCraftEnvironment
 from .utils.cluster import get_slurm_parameters
@@ -110,7 +111,9 @@ def init_seed_and_system(cfg):
     from audiocraft.modules.transformer import set_efficient_attention_backend
 
     print(cfg.mp_start_method)
-    # multiprocessing.set_start_method(cfg.mp_start_method)
+    if platform.system() == "Linux":
+        print("KM: Linux System is detected, starting multiprocessing")
+        multiprocessing.set_start_method(cfg.mp_start_method)
     logger.debug('Setting mp start method to %s', cfg.mp_start_method)
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
