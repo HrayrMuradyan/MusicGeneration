@@ -9,7 +9,9 @@ import logging
 from pathlib import Path
 import re
 import typing as tp
-
+## HM
+import os
+##
 import flashy
 import torch
 
@@ -133,7 +135,13 @@ def check_sharded_checkpoint(checkpoint_path: Path, rank0_checkpoint_path: Path)
     tmp_path = Path(str(checkpoint_path) + '.tmp')
     if token.exists():
         if tmp_path.exists():
-            tmp_path.rename(checkpoint_path)
+            ## HM
+            try:
+                tmp_path.rename(checkpoint_path)
+            except FileExistsError:
+                os.remove(checkpoint_path)
+                tmp_path.rename(checkpoint_path)
+            ##
     flashy.distrib.barrier()
     if flashy.distrib.is_rank_zero() and token.exists():
         token.unlink()
@@ -150,6 +158,11 @@ def _safe_save_checkpoint(state: tp.Any, checkpoint_path: Path, is_sharded: bool
         if token.exists():
             token.unlink()
     _barrier_if_sharded()
+    ## HM
+    if os.name == 'nt':
+        if os.path.exists(checkpoint_path):
+            os.remove(checkpoint_path)
+    ##
     with flashy.utils.write_and_rename(checkpoint_path) as f:
         torch.save(state, f)
         _barrier_if_sharded()
