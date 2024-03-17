@@ -619,15 +619,16 @@ class MusicGenSolver(base.StandardSolver):
                 metrics['rtf'] = rtf
 
             else:
-                hydrated_conditions, sample_generation_params = None, None
+                sample_generation_params = None
                 if self.cfg.generate.lm.unprompted_samples:
                     if not self.cfg.generate.lm.gen_gt_samples: # KM TODO Only supports this one for now
                         gen_unprompted_outputs = self.run_generate_step(
                             batch, gen_duration=target_duration, prompt_duration=None,
                             **self.generation_params)
+                        conditions = [{'condition': foldername} for foldername in gen_unprompted_outputs['foldername']]
                         rtf = -1 # TODO KM Check what this is and if there is workaround
                         sample_manager.add_samples(
-                            gen_unprompted_outputs['gen_tokens'].cpu(), self.epoch, hydrated_conditions,
+                            gen_unprompted_outputs['gen_tokens'].cpu(), self.epoch, conditions,
                             ground_truth_wavs=None, generation_args=sample_generation_params, memory_saver=self.memory_saver)
                         metrics['rtf'] = rtf
 
