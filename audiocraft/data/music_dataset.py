@@ -278,14 +278,20 @@ class MusicTensorDataset(torch.utils.data.Dataset):
     Args:
         path (Path or str): Path to the folder with pairs of samples. The path has to have
             folders each having two files, named encodec_encoding.pt and attributes.pt
-        random(bool): Whether to getitem randomly or complying with idx
+        randomized(bool): Whether to getitem randomly or complying with idx
+        desired_num_samples(int): Equals to updates_per_epoch*batch_size. Used to calculate dataset_multiplier.
+            Eventually dataset_multiplier*num_samples should be close to desired_num_samples
+
     """
-    def __init__(self, path, randomized=True):
+    def __init__(self, path, randomized=True, desired_num_samples=100):
         logging.info(f'KM: Creating MusicTensorDataset with path: {path} with random = {randomized}')
         self.path = path
 
         self.folders = self.get_valid_folders()
         self.random = randomized
+
+        dataset_multiplier = max(int(desired_num_samples/len(self.folders)), 1)
+        self.folders = self.folders*dataset_multiplier
 
     def get_valid_folders(self):
         """
@@ -318,4 +324,4 @@ class MusicTensorDataset(torch.utils.data.Dataset):
             folder_index = idx
 
         folder = os.path.join(self.path, self.folders[folder_index])
-        return torch.load(os.path.join(folder, 'encodec_encoding.pt')), torch.load(os.path.join(folder, 'attributes.pt'))
+        return torch.load(os.path.join(folder, 'encodec_encoding.pt')), (self.folders[folder_index], torch.load(os.path.join(folder, 'attributes.pt')))

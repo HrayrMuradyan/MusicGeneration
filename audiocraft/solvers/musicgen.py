@@ -360,7 +360,7 @@ class MusicGenSolver(base.StandardSolver):
         check_synchronization_points = idx == 1 and self.device == 'cuda'
 
         if self.cfg.memory_saver.enable:
-            audio_tokens, conditions = batch
+            audio_tokens, (_, conditions) = batch
             condition_tensors, padding_mask = conditions['condition_tensors'], conditions['padding_mask']
             audio_tokens = audio_tokens.to(self.device)
             for k, v in condition_tensors.items():
@@ -491,7 +491,7 @@ class MusicGenSolver(base.StandardSolver):
 
             condition_tensors = None
         else:
-            _, conditions = batch
+            _, (foldername, conditions) = batch
             prompt_tokens = None #KM TODO: Add this for continuation. Not hard. take batch[0](i.e. audio_tokens)[:, :x]
             attributes = None
             prompt_audio = None
@@ -527,6 +527,8 @@ class MusicGenSolver(base.StandardSolver):
             'prompt_audio': prompt_audio,
             'prompt_tokens': prompt_tokens,
         }
+        if self.memory_saver:
+            gen_outputs['foldername'] = foldername
         return gen_outputs
 
     def generate_audio(self) -> dict:
@@ -539,7 +541,6 @@ class MusicGenSolver(base.StandardSolver):
         lp = self.log_progress(generate_stage_name, loader, total=updates, updates=self.log_updates)
 
         dataset = get_dataset_from_loader(loader)
-        print('Config dataset: ', self.cfg.dataset)
         dataset_duration = dataset.segment_duration if isinstance(dataset, AudioDataset) else self.cfg.dataset.segment_duration
         assert dataset_duration is not None
         # assert isinstance(dataset, AudioDataset)
