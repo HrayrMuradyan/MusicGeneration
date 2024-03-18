@@ -549,7 +549,7 @@ class StandardSolver(ABC, flashy.BaseSolver):
             self.logger.warning("Fake loading for benchmarking: re-using first batch")
             batch = next(iter(loader))
             loader = [batch] * updates_per_epoch  # type: ignore
-        lp = self.log_progress(self.current_stage, loader, total=updates_per_epoch, updates=self.log_updates)
+        lp = self.log_progress(self.current_stage, loader, total=len(loader), updates=self.log_updates)
         average = flashy.averager()  # epoch wise average
         instant_average = flashy.averager()  # average between two logging
         metrics: dict = {}
