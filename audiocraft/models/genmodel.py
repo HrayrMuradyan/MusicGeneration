@@ -13,6 +13,8 @@ provide easy access to the generation API.
 
 from abc import ABC, abstractmethod
 import typing as tp
+from pathlib import Path
+import os
 
 import omegaconf
 import torch
@@ -21,8 +23,11 @@ from .encodec import CompressionModel
 from .lm import LMModel
 from .builders import get_wrapped_compression_model
 from ..data.audio_utils import convert_audio
-from ..modules.conditioners import ConditioningAttributes
+from ..modules.conditioners import ConditioningAttributes, ConditionType
 from ..utils.autocast import TorchAutocast
+
+ConditionTensors = tp.Dict[str, ConditionType]
+CFGConditions = tp.Union[ConditionTensors, tp.Tuple[ConditionTensors, ConditionTensors]]
 
 
 class BaseGenModel(ABC):
@@ -43,7 +48,8 @@ class BaseGenModel(ABC):
         self.lm = lm
         self.cfg: tp.Optional[omegaconf.DictConfig] = None
         # Just to be safe, let's put everything in eval mode.
-        self.compression_model.eval()
+        if self.compression_model is not None:
+            self.compression_model.eval()
         self.lm.eval()
 
         if hasattr(lm, 'cfg'):
@@ -51,7 +57,7 @@ class BaseGenModel(ABC):
             assert isinstance(cfg, omegaconf.DictConfig)
             self.cfg = cfg
 
-        if self.cfg is not None:
+        if (self.cfg is not None) and (self.compression_model is not None):
             self.compression_model = get_wrapped_compression_model(self.compression_model, self.cfg)
 
         if max_duration is None:
@@ -148,19 +154,48 @@ class BaseGenModel(ABC):
             return self.generate_audio(tokens), tokens
         return self.generate_audio(tokens)
 
-    def generate(self, descriptions: tp.List[str], progress: bool = False, return_tokens: bool = False) \
+    def read_condition_tensors(self, paths_to_descriptions: tp.List[tp.Union[str, Path]]) \
+            -> tp.Tuple[tp.List[ConditioningAttributes], torch.Tensor]:
+        """Load conditional tensors from the paths. Each path should contain one description.
+
+        Args:
+            paths_to_descriptions (list of str or Path): A list of strings or list of paths that contain the path to
+                saved pre-processed condition dictionary of tensors that are outputs of T5 Conditioner. Each file should
+                contain dictionary with keys: attributes and prompt_tokens.
+        """
+        conditions = []
+        masks = []
+
+        for path in paths_to_descriptions:
+            description = torch.load(path)
+            conditions.append(description['description'][0])
+            masks.append(description['description'][1])
+
+        return {'description': (torch.cat(conditions, 0).to(self.device), torch.cat(masks, 0).to(self.device))}
+
+    def generate(self, descriptions: tp.List[tp.Union[str, Path]], progress: bool = False, return_tokens: bool = False, memory_saver: bool=False) \
             -> tp.Union[torch.Tensor, tp.Tuple[torch.Tensor, torch.Tensor]]:
         """Generate samples conditioned on text.
 
         Args:
-            descriptions (list of str): A list of strings used as text conditioning.
+            descriptions (list of str or Paths): A list of strings used as text conditioning. KM: If memory_saver is True
+                these will be treated as paths to descriptions.
             progress (bool, optional): Flag to display progress of the generation process. Defaults to False.
+            memory_saver (bool, optional): KM: If True, descriptions will be treated like paths to saved tensors that are
+                pre-processed using T5 Conditioner.
         """
-        attributes, prompt_tokens = self._prepare_tokens_and_attributes(descriptions, None)
-        for attribute in attributes:
-            print(attribute)
+        if memory_saver and (not all([os.path.isfile(desc) for desc in descriptions])):
+            raise ValueError('If memory_saver is True, the descriptions parameter should contain paths to the pre-processed description vectors')
+
+        if not memory_saver:
+            attributes, prompt_tokens = self._prepare_tokens_and_attributes(descriptions, None)
+            condition_tensors = {}
+        else:
+            condition_tensors = self.read_condition_tensors(descriptions)
+            attributes, prompt_tokens = None, None
+
         assert prompt_tokens is None
-        tokens = self._generate_tokens(attributes, prompt_tokens, progress)
+        tokens = self._generate_tokens(attributes, prompt_tokens, progress, condition_tensors)
         if return_tokens:
             return self.generate_audio(tokens), tokens
         return self.generate_audio(tokens)
@@ -192,14 +227,16 @@ class BaseGenModel(ABC):
             return self.generate_audio(tokens), tokens
         return self.generate_audio(tokens)
 
-    def _generate_tokens(self, attributes: tp.List[ConditioningAttributes],
-                         prompt_tokens: tp.Optional[torch.Tensor], progress: bool = False) -> torch.Tensor:
+
+    def _generate_tokens(self, attributes: tp.Optional[tp.List[ConditioningAttributes]], prompt_tokens: tp.Optional[torch.Tensor],
+                         progress: bool = False,  condition_tensors: tp.Optional[CFGConditions] = {}) -> torch.Tensor:
         """Generate discrete audio tokens given audio prompt and/or conditions.
 
         Args:
-            attributes (list of ConditioningAttributes): Conditions used for generation (here text).
+            attributes (list of ConditioningAttributes, optional): Conditions used for generation (here text).
             prompt_tokens (torch.Tensor, optional): Audio prompt used for continuation.
             progress (bool, optional): Flag to display progress of the generation process. Defaults to False.
+            condition_tensors (CFGConditions): Pre-processed attributes as an alternative to providing attributes.
         Returns:
             torch.Tensor: Generated audio, of shape [B, C, T], T is defined by the generation params.
         """
@@ -228,7 +265,7 @@ class BaseGenModel(ABC):
             # generate by sampling from LM, simple case.
             with self.autocast:
                 gen_tokens = self.lm.generate(
-                    prompt_tokens, attributes,
+                    prompt_tokens, attributes, condition_tensors,
                     callback=callback, max_gen_len=total_gen_len, **self.generation_params)
 
         else:
@@ -248,7 +285,7 @@ class BaseGenModel(ABC):
                 max_gen_len = int(chunk_duration * self.frame_rate)
                 with self.autocast:
                     gen_tokens = self.lm.generate(
-                        prompt_tokens, attributes,
+                        prompt_tokens, attributes, condition_tensors,
                         callback=callback, max_gen_len=max_gen_len, **self.generation_params)
                 if prompt_tokens is None:
                     all_tokens.append(gen_tokens)

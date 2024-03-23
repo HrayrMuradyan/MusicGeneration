@@ -193,6 +193,31 @@ class SampleManager:
         audio_path = audio_write(stem_path, wav, **self.xp.cfg.generate.audio)
         return audio_path
 
+    def _store_tensor(self, encoded_wav: torch.Tensor, stem_path: Path, overwrite: bool = False) -> Path:
+        """Stores the tensor with the given stem path using the XP's configuration.
+
+        Args:
+            encoded_wav (torch.Tensor): Audio to store.
+            stem_path (Path): Path in sample output directory with file stem to use.
+            overwrite (bool): When False (default), skips storing an existing audio file.
+        Returns:
+            Path: The path at which the audio is stored.
+        """
+        existing_paths = [
+            path for path in stem_path.parent.glob(stem_path.stem + '.*')
+            if path.suffix != '.json'
+        ]
+        exists = len(existing_paths) > 0
+        if exists and overwrite:
+            logger.warning(f"Overwriting existing encoded_wav file with stem path {stem_path}")
+        elif exists:
+            return existing_paths[0]
+        
+        path = Path(str(stem_path) + '.pt')
+        path.parent.mkdir(exist_ok=True, parents=True)
+        torch.save(encoded_wav, path)
+        return stem_path
+
     def add_sample(self, sample_wav: torch.Tensor, epoch: int, index: int = 0,
                    conditions: tp.Optional[tp.Dict[str, str]] = None, prompt_wav: tp.Optional[torch.Tensor] = None,
                    ground_truth_wav: tp.Optional[torch.Tensor] = None,
@@ -235,11 +260,38 @@ class SampleManager:
             json.dump(asdict(sample), f, indent=2)
         return sample
 
+    def add_encoded_sample(self, encoded_generation: torch.Tensor, epoch: int, conditions: tp.Dict[str, tp.Any]=None, index: int = 0,
+                   ) -> Sample:
+        """Adds a single encoded (Encodec encoded) sample.
+        The sample is stored in the XP's sample output directory, under a corresponding epoch folder.
+        Each sample is assigned an id which is computed using the input data. No meta data will be stored
+        anywhere for encoded samples for now.
+
+        Args:
+            encoded_generation (torch.Tensor): generation output of the model to store. Tensor of shape [N_codebooks, shape].
+            epoch (int): current training epoch.
+            index (int): helpful to differentiate samples from the same batch.
+        Returns:
+            Sample: The saved sample.
+        """
+        sample_id = self._get_sample_id(index, None, None)
+        reuse_id = self.map_reference_to_sample_id
+        prompt, ground_truth = None, None
+        generation_args = {}
+        sample_path = self._store_tensor(encoded_generation, self.base_folder / str(epoch) / sample_id, overwrite=True)
+        duration = encoded_generation.shape[-1] / self.xp.cfg.memory_saver.compression_frame_rate
+        sample = Sample(sample_id, str(sample_path), epoch, duration, conditions, prompt, ground_truth, generation_args)
+        self.samples.append(sample)
+        with open(sample_path.with_suffix('.json'), 'w') as f:
+            json.dump(asdict(sample), f, indent=2)
+        return sample
+
     def add_samples(self, samples_wavs: torch.Tensor, epoch: int,
                     conditioning: tp.Optional[tp.List[tp.Dict[str, tp.Any]]] = None,
                     prompt_wavs: tp.Optional[torch.Tensor] = None,
                     ground_truth_wavs: tp.Optional[torch.Tensor] = None,
-                    generation_args: tp.Optional[tp.Dict[str, tp.Any]] = None) -> tp.List[Sample]:
+                    generation_args: tp.Optional[tp.Dict[str, tp.Any]] = None,
+                    memory_saver: bool = False) -> tp.List[Sample]:
         """Adds a batch of samples.
         The samples are stored in the XP's sample output directory, under a corresponding
         epoch folder. Each sample is assigned an id which is computed using the input data and their batch index.
@@ -260,10 +312,13 @@ class SampleManager:
         """
         samples = []
         for idx, wav in enumerate(samples_wavs):
-            prompt_wav = prompt_wavs[idx] if prompt_wavs is not None else None
-            gt_wav = ground_truth_wavs[idx] if ground_truth_wavs is not None else None
-            conditions = conditioning[idx] if conditioning is not None else None
-            samples.append(self.add_sample(wav, epoch, idx, conditions, prompt_wav, gt_wav, generation_args))
+            if memory_saver:
+                samples.append(self.add_encoded_sample(wav, epoch, conditioning[idx], idx))
+            else:
+                prompt_wav = prompt_wavs[idx] if prompt_wavs is not None else None
+                gt_wav = ground_truth_wavs[idx] if ground_truth_wavs is not None else None
+                conditions = conditioning[idx] if conditioning is not None else None
+                samples.append(self.add_sample(wav, epoch, idx, conditions, prompt_wav, gt_wav, generation_args))
         return samples
 
     def get_samples(self, epoch: int = -1, max_epoch: int = -1, exclude_prompted: bool = False,

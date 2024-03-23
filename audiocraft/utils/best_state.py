@@ -34,11 +34,12 @@ class BestStateDictManager(flashy.state.StateDictSource):
         dtype (torch.dtype): Data type for the state parameters.
     """
     def __init__(self, device: tp.Union[torch.device, str] = 'cpu',
-                 dtype: tp.Optional[torch.dtype] = None):
+                 dtype: tp.Optional[torch.dtype] = None, memory_saver: bool=False):
         self.device = device
         self.states: dict = {}
         self.param_ids: dict = defaultdict(dict)
         self.dtype = dtype
+        self.memory_saver = memory_saver
 
     def _get_parameter_ids(self, state_dict):
         return {id(p): name for name, p in state_dict.items() if isinstance(p, torch.Tensor)}
@@ -78,4 +79,6 @@ class BestStateDictManager(flashy.state.StateDictSource):
     def load_state_dict(self, state: flashy.state.StateDict):
         for name, sub_state in state.items():
             for k, v in sub_state.items():
+                if self.memory_saver and k.startswith('condition_provider.conditioners.description.output_proj'):
+                    continue
                 self.states[name][k].copy_(v)

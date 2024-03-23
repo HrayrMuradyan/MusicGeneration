@@ -40,6 +40,8 @@ class StandardSolver(ABC, flashy.BaseSolver):
         self.logger.info(f"Instantiating solver {self.__class__.__name__} for XP {self.xp.sig}")
         self.logger.info(f"All XP logs are stored in {self.xp.folder}")
         self.cfg = cfg
+        self.memory_saver = cfg.memory_saver.enable
+        self.compression_frame_rate = cfg.memory_saver.compression_frame_rate
         self.device = cfg.device
         self.model: nn.Module
         self._continue_best_source_keys = ['best_state', 'fsdp_best_state']
@@ -61,7 +63,7 @@ class StandardSolver(ABC, flashy.BaseSolver):
         elif self.cfg.autocast:
             dtype_best = getattr(torch, self.cfg.autocast_dtype)  # type: ignore
             assert isinstance(dtype_best, torch.dtype)
-        self.best_state: BestStateDictManager = BestStateDictManager(dtype=dtype_best)
+        self.best_state: BestStateDictManager = BestStateDictManager(dtype=dtype_best, memory_saver=self.memory_saver)
         # Hacky support for keeping a copy of the full best state in rank0.
         self.fsdp_best_state: tp.Dict[str, tp.Any] = {}
         self.register_stateful('best_state', 'fsdp_best_state')  # register best_state object to keep it in state_dict
@@ -547,11 +549,11 @@ class StandardSolver(ABC, flashy.BaseSolver):
             self.logger.warning("Fake loading for benchmarking: re-using first batch")
             batch = next(iter(loader))
             loader = [batch] * updates_per_epoch  # type: ignore
-        lp = self.log_progress(self.current_stage, loader, total=updates_per_epoch, updates=self.log_updates)
+        lp = self.log_progress(self.current_stage, loader, total=len(loader), updates=self.log_updates)
         average = flashy.averager()  # epoch wise average
         instant_average = flashy.averager()  # average between two logging
         metrics: dict = {}
-
+        print(f'KM: Length of dataloader: {len(loader)}')
         with self.profiler, self.deadlock_detect:  # profiler will only run for the first 20 updates.
             self.logger.warning("*"*50 + "With Profiler and Deadlock Detect") # HRAYR
             for idx, batch in enumerate(lp):

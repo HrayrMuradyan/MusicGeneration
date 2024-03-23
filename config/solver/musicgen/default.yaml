@@ -44,9 +44,9 @@ dataset:
   train:
     num_samples: 1000000 # need a randomly large number here for AudioDataset
   valid:
-    num_samples: 10000
+    num_samples: 10
   generate:
-    num_samples: 50
+    num_samples: 2
 
 metrics:
   fad:
@@ -77,7 +77,7 @@ metrics:
       argmax: true
 
 generate:
-  every: 25
+  every: 3
   num_workers: 5
   path: samples
   audio:
@@ -115,7 +115,7 @@ checkpoint:
 
 optim:
   epochs: 200
-  updates_per_epoch: 2000
+  updates_per_epoch: 200
   lr: 1e-4
   optimizer: adamw
   max_norm: 1.0
