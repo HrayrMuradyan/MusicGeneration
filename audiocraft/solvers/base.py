@@ -14,6 +14,9 @@ import omegaconf
 import torch
 from torch import nn
 
+## HM
+import os
+##
 from .. import optim
 from ..optim import fsdp
 from ..utils import checkpoint
@@ -472,6 +475,11 @@ class StandardSolver(ABC, flashy.BaseSolver):
             self.save_checkpoints()
         self._start_epoch()
         if flashy.distrib.is_rank_zero():
+            ## HM
+            if os.name == 'nt':
+                if os.path.exists(self.xp.link.history_file):
+                    os.remove(self.xp.link.history_file)
+            ##
             self.xp.link.update_history(self.history)
 
     def run_epoch(self):
