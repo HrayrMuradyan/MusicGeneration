@@ -116,7 +116,7 @@ class PreprocessData:
 
 		condition_provider = ConditioningProvider(conditioners, device=self.cfg.device, **condition_provider_args).to(self.cfg.device)
 
-		return condition_provider
+		return condition_provider.eval()
 
 	def load_encodec(self):
 		
@@ -125,9 +125,9 @@ class PreprocessData:
 		encodec_model = get_compression_model(compression_cfg) 
 
 		encodec_model.load_state_dict(self.compression_ckpt['best_state'])
-		encodec_model.eval()
+		encodec_model
 
-		return encodec_model
+		return encodec_model.eval()
 
 
 

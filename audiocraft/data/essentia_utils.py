@@ -516,21 +516,21 @@ def make_comma_separated_unique(tags):
             seen_tags.add(tag)
     return ', '.join(result)
 
-def filter_predictions(predictions, class_list, threshold=0.1, n_best = 3):
+def filter_predictions(predictions, class_list, threshold=0.1, n_best_preds = 3):
     predictions_mean = np.mean(predictions, axis=0)
     sorted_indices = np.argsort(predictions_mean)[::-1]
     filtered_indices = [i for i in sorted_indices if predictions_mean[i] > threshold]
     if not filtered_indices:
         filtered_indices.append(sorted_indices[0])
     else:
-        filtered_indices = filtered_indices[:n_best]
+        filtered_indices = filtered_indices[:n_best_preds]
     filtered_labels = [class_list[i] for i in filtered_indices]
     filtered_values = [predictions_mean[i] for i in filtered_indices]
     return filtered_labels, filtered_values
 
 
 
-def get_essentia_features(audio_filename, n_best=3, weights_folder='../Dataset/essentia_weights/'):
+def get_essentia_features(audio_filename, n_best_preds=3, weights_folder='../Dataset/essentia_weights/'):
     audio = MonoLoader(filename=audio_filename, sampleRate=16000, resampleQuality=4)()
     embedding_model = TensorflowPredictEffnetDiscogs(graphFilename=weights_folder + "/discogs-effnet-bs64-1.pb", output="PartitionedCall:1")
     embeddings = embedding_model(audio)
@@ -540,20 +540,20 @@ def get_essentia_features(audio_filename, n_best=3, weights_folder='../Dataset/e
     # predict genres
     genre_model = TensorflowPredict2D(graphFilename=weights_folder + "/genre_discogs400-discogs-effnet-1.pb", input="serving_default_model_Placeholder", output="PartitionedCall:0")
     predictions = genre_model(embeddings)
-    filtered_labels, _ = filter_predictions(predictions, genre_labels, n_best=n_best)
+    filtered_labels, _ = filter_predictions(predictions, genre_labels, n_best_preds=n_best_preds)
     filtered_labels = ', '.join(filtered_labels).replace("---", ", ").split(', ')
     result_dict['genres'] = make_comma_separated_unique(filtered_labels)
 
     # predict mood/theme
     mood_model = TensorflowPredict2D(graphFilename=weights_folder + "/mtg_jamendo_moodtheme-discogs-effnet-1.pb")
     predictions = mood_model(embeddings)
-    filtered_labels, _ = filter_predictions(predictions, mood_theme_classes, n_best=n_best)
+    filtered_labels, _ = filter_predictions(predictions, mood_theme_classes, n_best_preds=n_best_preds)
     result_dict['moods'] = make_comma_separated_unique(filtered_labels)
 
     # predict instruments
     instrument_model = TensorflowPredict2D(graphFilename=weights_folder + "/mtg_jamendo_instrument-discogs-effnet-1.pb")
     predictions = instrument_model(embeddings)
-    filtered_labels, _ = filter_predictions(predictions, instrument_classes, n_best=n_best)
+    filtered_labels, _ = filter_predictions(predictions, instrument_classes, n_best_preds=n_best_preds)
     result_dict['instruments'] = filtered_labels
 
     return result_dict

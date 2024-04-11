@@ -24,35 +24,35 @@ warnings.filterwarnings("ignore")
 
 
 
-def download_audio(url, data_dict, save_path='../Dataset/raw_music/general/', overwrite=False):
+def download_audio(url, link_info_dict, save_path='../Dataset/raw_music/general/', overwrite=False):
     yt = YouTube(
         url,
         use_oauth=False,
         allow_oauth_cache=False
     )
 
-    assert os.path.exists(save_path), "Save path doesn't exist!"
+    assert save_path.exists(), "Save path doesn't exist!"
     
     audio_stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
     
-    filename = audio_stream.default_filename
-    download_path = Path(save_path) / filename
+    audio_filename = audio_stream.default_filename
+    download_path = save_path / audio_filename
 
-    wav_filename_path = download_path.with_suffix('.wav')
-    json_filename_path = download_path.with_suffix('.json')
+    wav_save_path = download_path.with_suffix('.wav')
+    json_save_path = download_path.with_suffix('.json')
 
-    if wav_filename_path.exists() and json_filename_path.exists() and not overwrite:
-        print(f'{wav_filename_path} \033[1malready exists. Skipping...\033[0m')
+    if wav_save_path.exists() and json_save_path.exists() and not overwrite:
+        print(f'{wav_save_path} \033[1malready exists. Skipping...\033[0m')
         return
 
-    audio_stream.download(output_path=save_path, filename=filename)
+    audio_stream.download(output_path=save_path, filename=audio_filename)
 
-    clip = AudioFileClip(str(download_path))
-    wav_filename = str(wav_filename_path)
-    clip.write_audiofile(wav_filename)
+    audio_clip = AudioFileClip(str(download_path))
+    wav_filename = str(wav_save_path)
+    audio_clip.write_audiofile(wav_filename)
     
-    with open(json_filename_path, 'w') as file:
-        json.dump(data_dict, file)
+    with open(json_save_path, 'w') as json_file:
+        json.dump(link_info_dict, json_file)
 
     os.remove(download_path)
 
@@ -66,36 +66,36 @@ def download_split(split='train', link_core_path='../Dataset/youtube_music_links
     if not save_path.exists():
         os.makedirs(save_path)
         
-    with open(link_file, "r") as text_file:
-        for line in text_file:
-            data_dict = json.loads(line)
-            link = data_dict.pop('link')
-            download_audio(link, data_dict, save_path, overwrite=overwrite)
+    with open(link_file, "r") as opened_link_file:
+        for line in opened_link_file:
+            link_info_dict = json.loads(line)
+            youtube_link = link_info_dict.pop('link')
+            download_audio(url=youtube_link, link_info_dict=link_info_dict, save_path=save_path, overwrite=overwrite)
 
 
 def divide_into_clips(split='train', raw_music_path='../Dataset/raw_music/', clip_duration=30, stride=15):
-    full_path = Path(raw_music_path) / split
-    wav_files = full_path.glob('*.wav')
+    raw_music_full_path = Path(raw_music_path) / split
+    all_wav_files = raw_music_full_path.glob('*.wav')
     
-    for wav_file in wav_files:
+    for wav_file in all_wav_files:
         json_file_path = wav_file.with_suffix('.json')
         audio, sr = audio_read(wav_file)
         
         # Make mono
         audio = audio.mean(0)
-        samples_per_clip = clip_duration * sr
+        points_per_clip = clip_duration * sr
         step_size = stride * sr
-        total_clips = int(np.ceil((len(audio) - samples_per_clip) / step_size)) + 1
+        total_clips = int(np.ceil((len(audio) - points_per_clip) / step_size)) + 1
         for i in range(total_clips):
-            start_sample = i * step_size
-            end_sample = start_sample + samples_per_clip
-            clip = audio[start_sample:end_sample]
+            start_point = i * step_size
+            end_point = start_point + points_per_clip
+            audio_clip = audio[start_point:end_point]
             
             clip_name = wav_file.parent / f"{wav_file.stem}_{i+1}"
             new_clip_path = clip_name.with_suffix('.wav')
             new_json_path = clip_name.with_suffix('.json')
             shutil.copy(json_file_path, new_json_path)
-            sf.write(new_clip_path, clip, sr)
+            sf.write(new_clip_path, audio_clip, sr)
         os.remove(wav_file)
         os.remove(json_file_path)
         print('Done:', wav_file)
@@ -109,12 +109,12 @@ def prepare_attributes(split='train', core_music_folder='../Dataset/raw_music/')
         music_file_name = music_path.stem
         json_file_path = music_path.with_suffix('.json')
 
-        with open(json_file_path, "r") as json_file:
-            data_dict = json.load(json_file)
+        with open(json_file_path, "r") as link_info_json_file:
+            link_info_dict = json.load(link_info_json_file)
             
         attribute_dict = {}
         attribute_dict["key"] = ""
-        attribute_dict["artist"] = data_dict["artist"]
+        attribute_dict["artist"] = link_info_dict["artist"]
         attribute_dict["sample_rate"] = 0
         attribute_dict["file_extension"] = music_path.suffix[1:]
         attribute_dict["description"] = ""
@@ -126,61 +126,61 @@ def prepare_attributes(split='train', core_music_folder='../Dataset/raw_music/')
         attribute_dict["name"] = music_file_name
         attribute_dict["instrument"] = ""
         attribute_dict["moods"] = []
-        attribute_dict["label"] = data_dict["label"]
+        attribute_dict["label"] = link_info_dict["label"]
 
-        with open(json_file_path, "w") as json_file:
-            json.dump(attribute_dict, json_file)
+        with open(json_file_path, "w") as attr_json_file:
+            json.dump(attribute_dict, attr_json_file)
             
         print('\033[1mSaved Json file for:\033[0m', music_file_name)
 
 
-def fill_json_split(split='train', main_files_path='../Dataset/raw_music/', n_best=3, jsonl_path='egs/', weights_path='../Dataset/essentia_weights/'):
-    jsonl_main_path = Path(jsonl_path) / split
-    jsonl_full_path = jsonl_main_path / 'data.jsonl'
+def fill_json_split(split='train', core_music_folder='../Dataset/raw_music/', split_jsonl_path='egs/', essentia_weights_path='../Dataset/essentia_weights/', n_best_preds=3):
+    split_jsonl_main_path = Path(split_jsonl_path) / split
+    split_jsonl_full_path = split_jsonl_main_path / 'data.jsonl'
     
-    full_path = Path(main_files_path) / split 
-    all_files = full_path.glob('*.wav')
+    raw_music_full_path = Path(core_music_folder) / split 
+    all_music_files = raw_music_full_path.glob('*.wav')
     
-    if not jsonl_main_path.exists():
+    if not split_jsonl_main_path.exists():
         os.makedirs(jsonl_main_path)
         
-    with open(jsonl_full_path, 'w') as jsonl_file:
-        for file in all_files:
-            jsonl_info = fill_json(file, n_best=n_best, weights_path=weights_path)
-            json_str = json.dumps(jsonl_info)
-            jsonl_file.write(json_str + '\n')
+    with open(split_jsonl_full_path, 'w') as split_jsonl_file:
+        for music_file in all_music_files:
+            music_jsonl_info = fill_json(music_file, n_best_preds=n_best_preds, essentia_weights_path=essentia_weights_path)
+            music_jsonl_str = json.dumps(music_jsonl_info)
+            split_jsonl_file.write(music_jsonl_str + '\n')
 
 
-def fill_json(music_file, n_best=3, weights_path = '../Dataset/essentia_weights/'):
-    str_path_music = str(music_file)
+def fill_json(music_file, n_best_preds=3, essentia_weights_path = '../Dataset/essentia_weights/'):
+    music_file_str = str(music_file)
     json_file_path = music_file.with_suffix('.json')
     
     audio, sr = audio_read(music_file)
     audio = audio[0]
     sec_len = len(audio)/sr
 
-    with open(json_file_path, 'r') as json_file:
-        data = json.load(json_file)
+    with open(json_file_path, 'r') as unfilled_json_file:
+        json_data = json.load(unfilled_json_file)
 
-    labeling_type = data['label']
+    labeling_type = json_data['label']
 
     if labeling_type == 'essentia':
-        music_info = get_essentia_features(audio_filename=str_path_music, n_best = n_best, weights_folder=weights_path)
+        music_info = get_essentia_features(audio_filename=music_file_str, n_best_preds = n_best_preds, weights_folder=weights_path)
     else:
-        music_info = custom_labeler(labeling_type, n_best=n_best)
+        music_info = custom_labeler(labeling_type, n_best_preds=n_best_preds)
         
-    data['duration'] = sec_len
-    data['sample_rate'] = sr
-    data['genre'] = music_info['genres']
-    data['instrument'] = ', '.join(music_info['instruments'])
-    data['moods'] = music_info['moods'].split(', ')
+    json_data['duration'] = sec_len
+    json_data['sample_rate'] = sr
+    json_data['genre'] = music_info['genres']
+    json_data['instrument'] = ', '.join(music_info['instruments'])
+    json_data['moods'] = music_info['moods'].split(', ')
 
-    with open(json_file_path, "w") as json_file:
-            json.dump(data, json_file)
+    with open(json_file_path, "w") as filled_json_file:
+            json.dump(json_data, filled_json_file)
 
     jsonl_data = {}
 
-    jsonl_data['path'] = str_path_music
+    jsonl_data['path'] = music_file_str
     jsonl_data['duration'] = sec_len
     jsonl_data['sample_rate'] = sr
     jsonl_data['amplitude'] = None
@@ -191,27 +191,29 @@ def fill_json(music_file, n_best=3, weights_path = '../Dataset/essentia_weights/
 
     print('Done:', music_file)
 
-def fill_descriptions(split='train', main_path='../Dataset/raw_music/', llm_checkpoint = 'ericzzz/falcon-rw-1b-instruct-openorca'):
-    full_path = Path(main_path) / split 
-    json_files = full_path.glob('*.json')
+def fill_descriptions(split='train', core_music_folder='../Dataset/raw_music/', llm_checkpoint = 'ericzzz/falcon-rw-1b-instruct-openorca'):
+    split_full_path = Path(core_music_folder) / split 
+    json_files = split_full_path.glob('*.json')
     description_generator = DescriptionGenerator(checkpoint = llm_checkpoint)
 
     for json_file in json_files:
-        with open(json_file, 'r') as file:
-            data = json.load(file)
-        description = description_generator.generate(data)
-        data['description'] = description
-        with open(json_file, "w") as file:
-            json.dump(data, file)
+        with open(json_file, 'r') as unfilled_json:
+            json_data = json.load(unfilled_json)
+        description = description_generator.generate(json_data)
+        json_data['description'] = description
+
+        with open(json_file, "w") as filled_json:
+            json.dump(json_data, filled_json)
+            
         print('\nDone:', json_file)
         print('Description:', description)
         print('-'*50)
 
 
-def custom_labeler(label, n_best = 3):
+def custom_labeler(label, n_best_preds = 3):
     result_dict = {} 
     if label=='duduk':
         result_dict['genres'] = 'Armenian, Armenian Folk'
         result_dict['instruments'] = ['duduk']   
-        result_dict['moods'] = ', '.join(random.sample(['melancholic', 'emotional', 'dramatic', 'relaxing', 'sad'], n_best))
+        result_dict['moods'] = ', '.join(random.sample(['melancholic', 'emotional', 'dramatic', 'relaxing', 'sad'], n_best_preds))
     return result_dict
