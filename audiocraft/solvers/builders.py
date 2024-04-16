@@ -285,6 +285,23 @@ def get_chroma_cosine_similarity(cfg: omegaconf.DictConfig) -> metrics.ChromaCos
     kwargs = dict_from_config(cfg.get(cfg.model))
     return metrics.ChromaCosineSimilarityMetric(**kwargs)
 
+def memory_saver_collater(samples):
+    """
+    Handles batch training if memory saver is enabled
+    """
+    wav_tensor = torch.stack([sample[0] for sample in samples])
+
+    description_0 = torch.stack([sample[1][1]['condition_tensors']['description'][0] for sample in samples])
+    description_1 = torch.stack([sample[1][1]['condition_tensors']['description'][1] for sample in samples])
+
+    padding_masks = torch.stack([sample[1][1]['padding_mask'] for sample in samples])
+
+    attributes = {'condition_tensors': {'description': (description_0, description_1)},
+                  'padding_mask': padding_masks}
+
+    folders = [sample[1][0] for sample in samples]
+
+    return wav_tensor, (folders, attributes)
 
 def get_audio_datasets(cfg: omegaconf.DictConfig,
                        dataset_type: DatasetType = DatasetType.AUDIO) -> tp.Dict[str, torch.utils.data.DataLoader]:
@@ -362,7 +379,7 @@ def get_audio_datasets(cfg: omegaconf.DictConfig,
             batch_size=batch_size,
             num_workers=num_workers,
             seed=seed,
-            collate_fn=dataset.collater if return_info and (dataset_type != DatasetType.MUSIC_MEMORY_SAVER) else None,
+            collate_fn=dataset.collater if return_info and (dataset_type != DatasetType.MUSIC_MEMORY_SAVER) else memory_saver_collater,
             shuffle=shuffle,
         )
         dataloaders[split] = loader

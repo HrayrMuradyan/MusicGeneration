@@ -142,7 +142,7 @@ def fill_json_split(split='train', core_music_folder='../Dataset/raw_music/', sp
     all_music_files = raw_music_full_path.glob('*.wav')
     
     if not split_jsonl_main_path.exists():
-        os.makedirs(jsonl_main_path)
+        os.makedirs(split_jsonl_main_path)
         
     with open(split_jsonl_full_path, 'w') as split_jsonl_file:
         for music_file in all_music_files:
@@ -165,7 +165,7 @@ def fill_json(music_file, n_best_preds=3, essentia_weights_path = '../Dataset/es
     labeling_type = json_data['label']
 
     if labeling_type == 'essentia':
-        music_info = get_essentia_features(audio_filename=music_file_str, n_best_preds = n_best_preds, weights_folder=weights_path)
+        music_info = get_essentia_features(audio_filename=music_file_str, n_best_preds = n_best_preds, weights_folder=essentia_weights_path)
     else:
         music_info = custom_labeler(labeling_type, n_best_preds=n_best_preds)
         

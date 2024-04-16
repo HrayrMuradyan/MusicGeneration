@@ -498,13 +498,18 @@ class MusicGenSolver(base.StandardSolver):
             audio = None
             condition_tensors, padding_mask = conditions['condition_tensors'], conditions['padding_mask']
             num_samples = condition_tensors['description'][0].shape[0]
+
+            #Add null_conditions and
+            # Move to the right device
             # audio_tokens = audio_tokens.to(self.device)
             for k, v in condition_tensors.items():
                 if isinstance(v, torch.Tensor):
+                    condition_tensors[k] = torch.cat([condition_tensors[k], torch.zeros_like(condition_tensors[k])], dim=0)
                     condition_tensors[k] = condition_tensors[k].to(self.device)
                 elif isinstance(v, list) or isinstance(v, tuple):
                     condition_tensors[k] = tuple(
-                        [condition_tensors[k][i].to(self.device) for i in range(len(condition_tensors[k]))])
+                        [torch.cat([condition_tensors[k][i], torch.zeros_like(condition_tensors[k][i], dtype=condition_tensors[k][i].dtype)], dim=0).to(self.device) for i in range(len(condition_tensors[k]))])
+
 
         # generate by sampling from the LM
         with (self.autocast):
