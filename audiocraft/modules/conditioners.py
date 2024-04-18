@@ -441,7 +441,7 @@ class T5Conditioner(TextConditioner):
 
         empty_idx = torch.LongTensor([i for i, xi in enumerate(entries) if xi == ""])
 
-        inputs = self.t5_tokenizer(entries, return_tensors='pt', padding=True).to(self.device)
+        inputs = self.t5_tokenizer(entries, return_tensors='pt', padding='max_length', max_length=55, truncation=True).to(self.device)
         mask = inputs['attention_mask']
         mask[empty_idx, :] = 0  # zero-out index where the input is non-existant
         return inputs

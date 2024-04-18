@@ -506,7 +506,7 @@ class StandardSolver(ABC, flashy.BaseSolver):
                     self.run_stage('generate', with_rank_rng()(self.generate))
 
 
-    def freeze_layers(self, max_layer = 20):
+    def freeze_layers(self, max_layer = 10):
         freeze_layer_list = ['emb'] +  [f'transformer.layers.{i}.' for i in range(max_layer)]
 
         for n, param in self.model.named_parameters():

@@ -303,7 +303,6 @@ class MusicTensorDataset(torch.utils.data.Dataset):
             if os.path.isdir(os.path.join(self.path, folder)):
                 folder_full_path = os.path.join(self.path, folder)
                 files_within_folder = os.listdir(folder_full_path)
-                print(files_within_folder)
                 if set(files_within_folder) == {'encodec_encoding.pt', 'attributes.pt'}:
                     folders.append(folder)
 

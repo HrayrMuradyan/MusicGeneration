@@ -1,0 +1,10 @@
+# @package __global__
+
+datasource:
+  max_sample_rate: 44100
+  max_channels: 2
+
+  train: dataset/train
+  valid: dataset/train
+  evaluate: dataset/train
+  generate: dataset/train
