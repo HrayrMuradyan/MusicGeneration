@@ -369,7 +369,11 @@ def get_audio_datasets(cfg: omegaconf.DictConfig,
             dataset = data.info_audio_dataset.InfoAudioDataset.from_meta(path, return_info=return_info, **kwargs)
         elif dataset_type == DatasetType.MUSIC_MEMORY_SAVER:
             random_sample_selection = getattr(cfg, "random_sample_selection", False)
-            dataset = data.music_dataset.MusicTensorDataset(path, random_sample_selection, batch_size*cfg.optim.updates_per_epoch)
+            if split == 'train':
+                dataset = data.music_dataset.MusicTensorDataset(path, random_sample_selection, batch_size*cfg.optim.updates_per_epoch,
+                                                            token_dropout_p=cfg.memory_saver.token_dropout_p, description_dropout_p=cfg.memory_saver.description_dropout_p)
+            else:
+                dataset = data.music_dataset.MusicTensorDataset(path, random_sample_selection, None)
         else:
             raise ValueError(f"Dataset type is unsupported: {dataset_type}")
 
