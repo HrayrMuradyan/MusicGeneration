@@ -507,6 +507,113 @@ instrument_classes = [
     "voice"
 ]
 
+valid_genres = [
+    "Stage & Screen", 
+    "Rock", 
+    "Reggae", 
+    "Pop", 
+    "Jazz", 
+    "Hip Hop", 
+    "Funk / Soul", 
+    "Folk, World, & Country", 
+    "Electronic", 
+    "Classical---Baroque",
+    "Classical---Choral",
+    "Classical---Classical",
+    "Classical---Contemporary",
+    "Classical---Impressionist",
+    "Classical---Medieval",
+    "Classical---Modern",
+    "Classical---Neo-Classical",
+    "Classical---Neo-Romantic",
+    "Classical---Opera",
+    "Classical---Post-Modern",
+    "Classical---Renaissance",
+    "Classical---Romantic"
+]
+
+valid_moods = [
+    "action",
+    "adventure",
+    "background", 
+    "ballad",
+    "calm",
+    "dark",
+    "deep",
+    "documentary",
+    "drama",
+    "dramatic",
+    "dream",
+    "emotional",
+    "energetic",
+    "epic",
+    "fast",
+    "happy",
+    "heavy",
+    "hopeful",
+    "inspiring",
+    "love",
+    "meditative",
+    "melancholic",
+    "melodic",
+    "motivational",
+    "positive",
+    "powerful",
+    "relaxing",
+    "retro",
+    "romantic",
+    "sad",
+    "slow",
+    "soft",
+    "soundscape",
+    "travel",
+    "upbeat",
+    "uplifting"
+]
+
+valid_instruments = [
+    "accordion",
+    "acousticbassguitar",
+    "acousticguitar",
+    "bass",
+    "beat",
+    "bell",
+    "bongo",
+    "brass",
+    "cello",
+    "clarinet",
+    "classicalguitar",
+    "computer",
+    "doublebass",
+    "drummachine",
+    "drums",
+    "electricguitar",
+    "electricpiano",
+    "flute",
+    "guitar",
+    "harmonica",
+    "harp",
+    "horn",
+    "keyboard",
+    "oboe",
+    "orchestra",
+    "organ",
+    "pad",
+    "percussion",
+    "piano",
+    "pipeorgan",
+    "rhodes",
+    "sampler",
+    "saxophone",
+    "strings",
+    "synthesizer",
+    "trombone",
+    "trumpet",
+    "viola",
+    "violin",
+    "voice"
+]
+
 def make_comma_separated_unique(tags):
     seen_tags = set()
     result = []
@@ -515,46 +622,53 @@ def make_comma_separated_unique(tags):
             result.append(tag)
             seen_tags.add(tag)
     return ', '.join(result)
-
-def filter_predictions(predictions, class_list, threshold=0.1, n_best_preds = 3):
+    
+def filter_predictions(predictions, class_list, valid_class_list, threshold=0.1, n_best_preds = 3, guarantee_pred=True):
     predictions_mean = np.mean(predictions, axis=0)
     sorted_indices = np.argsort(predictions_mean)[::-1]
-    filtered_indices = [i for i in sorted_indices if predictions_mean[i] > threshold]
-    if not filtered_indices:
-        filtered_indices.append(sorted_indices[0])
+    valid_sorted_indices = [i for i in sorted_indices if class_list[i] in valid_class_list]
+    valid_sorted_indices_thres = [i for i in valid_sorted_indices if predictions_mean[i] > threshold]
+    valid_labels = [class_list[index] for index in valid_sorted_indices_thres]
+    label_values = [predictions_mean[index] for index in valid_sorted_indices_thres]
+    if not valid_labels and guarantee_pred:
+        best_pred = valid_sorted_indices[0]
+        return [class_list[best_pred]], predictions_mean[best_pred]
     else:
-        filtered_indices = filtered_indices[:n_best_preds]
-    filtered_labels = [class_list[i] for i in filtered_indices]
-    filtered_values = [predictions_mean[i] for i in filtered_indices]
-    return filtered_labels, filtered_values
+        return valid_labels[:n_best_preds], label_values[:n_best_preds]
 
 
+def predict_genre(embeddings, n_best_preds, valid_class_list, threshold=0.1, guarantee_pred=True, weights_folder='../Dataset/essentia_weights/'):
+    genre_model = TensorflowPredict2D(graphFilename=weights_folder + "/genre_discogs400-discogs-effnet-1.pb", input="serving_default_model_Placeholder", output="PartitionedCall:0")
+    predictions = genre_model(embeddings)
+    filtered_labels, _ = filter_predictions(predictions, genre_labels, valid_class_list, n_best_preds=n_best_preds, threshold=threshold, guarantee_pred=guarantee_pred)
+    filtered_labels = ', '.join(filtered_labels).replace("---", ", ").split(', ')
+    genres = make_comma_separated_unique(filtered_labels)
+    return genres
 
-def get_essentia_features(audio_filename, n_best_preds=3, weights_folder='../Dataset/essentia_weights/'):
+def predict_mood(embeddings, n_best_preds, valid_class_list, threshold=0.05, guarantee_pred=True, weights_folder='../Dataset/essentia_weights/'):
+    mood_model = TensorflowPredict2D(graphFilename=weights_folder + "/mtg_jamendo_moodtheme-discogs-effnet-1.pb")
+    predictions = mood_model(embeddings)
+    filtered_labels, _ = filter_predictions(predictions, mood_theme_classes, valid_class_list, n_best_preds=n_best_preds, threshold=threshold, guarantee_pred=guarantee_pred)
+    moods = make_comma_separated_unique(filtered_labels)
+    return moods
+
+def predict_instruments(embeddings, n_best_preds, valid_class_list, threshold=0.15, guarantee_pred=True, weights_folder='../Dataset/essentia_weights/'):
+    instrument_model = TensorflowPredict2D(graphFilename=weights_folder + "/mtg_jamendo_instrument-discogs-effnet-1.pb")
+    predictions = instrument_model(embeddings)
+    instruments_list, _ = filter_predictions(predictions, instrument_classes, valid_class_list, n_best_preds=n_best_preds, threshold=threshold, guarantee_pred=guarantee_pred)
+    return instruments_list
+
+def get_embedding_essentia(audio_filename, weights_folder='../Dataset/essentia_weights/'):
     audio = MonoLoader(filename=audio_filename, sampleRate=16000, resampleQuality=4)()
     embedding_model = TensorflowPredictEffnetDiscogs(graphFilename=weights_folder + "/discogs-effnet-bs64-1.pb", output="PartitionedCall:1")
     embeddings = embedding_model(audio)
+    return embeddings
 
+def get_essentia_features(audio_filename, n_best_preds, valid_genres, valid_moods, valid_instruments, weights_folder='../Dataset/essentia_weights/'):
+    embeddings = get_embedding_essentia(audio_filename)
     result_dict = {}
-
-    # predict genres
-    genre_model = TensorflowPredict2D(graphFilename=weights_folder + "/genre_discogs400-discogs-effnet-1.pb", input="serving_default_model_Placeholder", output="PartitionedCall:0")
-    predictions = genre_model(embeddings)
-    filtered_labels, _ = filter_predictions(predictions, genre_labels, n_best_preds=n_best_preds)
-    filtered_labels = ', '.join(filtered_labels).replace("---", ", ").split(', ')
-    result_dict['genres'] = make_comma_separated_unique(filtered_labels)
-
-    # predict mood/theme
-    mood_model = TensorflowPredict2D(graphFilename=weights_folder + "/mtg_jamendo_moodtheme-discogs-effnet-1.pb")
-    predictions = mood_model(embeddings)
-    filtered_labels, _ = filter_predictions(predictions, mood_theme_classes, n_best_preds=n_best_preds)
-    result_dict['moods'] = make_comma_separated_unique(filtered_labels)
-
-    # predict instruments
-    instrument_model = TensorflowPredict2D(graphFilename=weights_folder + "/mtg_jamendo_instrument-discogs-effnet-1.pb")
-    predictions = instrument_model(embeddings)
-    filtered_labels, _ = filter_predictions(predictions, instrument_classes, n_best_preds=n_best_preds)
-    result_dict['instruments'] = filtered_labels
-
+    result_dict['genres'] = predict_genre(embeddings, n_best_preds, valid_genres)
+    result_dict['moods'] = predict_mood(embeddings, n_best_preds, valid_moods)
+    result_dict['instruments'] = predict_instruments(embeddings, n_best_preds, valid_instruments)
     return result_dict
 

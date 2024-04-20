@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from audiocraft.data.audio import audio_read
-from audiocraft.data.essentia_utils import get_essentia_features
+import audiocraft.data.essentia_utils as essentia_utils
 from audiocraft.data.description_generator import DescriptionGenerator
 
 import numpy as np
@@ -31,7 +31,7 @@ def download_audio(url, link_info_dict, save_path='../Dataset/raw_music/general/
         allow_oauth_cache=False
     )
 
-    assert save_path.exists(), "Save path doesn't exist!"
+    assert Path(save_path).exists(), "Save path doesn't exist!"
     
     audio_stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
     
@@ -80,22 +80,44 @@ def divide_into_clips(split='train', raw_music_path='../Dataset/raw_music/', cli
     for wav_file in all_wav_files:
         json_file_path = wav_file.with_suffix('.json')
         audio, sr = audio_read(wav_file)
-        
         # Make mono
         audio = audio.mean(0)
-        points_per_clip = clip_duration * sr
-        step_size = stride * sr
-        total_clips = int(np.ceil((len(audio) - points_per_clip) / step_size)) + 1
-        for i in range(total_clips):
-            start_point = i * step_size
-            end_point = start_point + points_per_clip
-            audio_clip = audio[start_point:end_point]
-            
-            clip_name = wav_file.parent / f"{wav_file.stem}_{i+1}"
-            new_clip_path = clip_name.with_suffix('.wav')
-            new_json_path = clip_name.with_suffix('.json')
-            shutil.copy(json_file_path, new_json_path)
-            sf.write(new_clip_path, audio_clip, sr)
+        
+        with open(json_file_path, "r") as link_info_json_file:
+            link_info_dict = json.load(link_info_json_file)
+
+        interval_splits = link_info_dict.pop('split')
+        interval_labels = link_info_dict['label'].split(', ')
+
+        if interval_splits:
+            end_index = int(len(audio)/sr) + 1
+            interval_splits = interval_splits.replace('end', str(end_index))
+            interval_splits = [s.split('-') for s in interval_splits.split(',')]
+            splitted_audios = [audio[int(start)*sr:int(end)*sr] for start, end in interval_splits]
+
+        else:
+            splitted_audios = [audio]
+
+        clip_count = 0
+        for interval_index, splitted_audio in enumerate(splitted_audios):
+            interval_label = interval_labels[interval_index]
+            link_info_dict['label'] = interval_label
+            points_per_clip = clip_duration * sr
+            step_size = stride * sr
+            total_clips = int(np.ceil((len(splitted_audio) - points_per_clip) / step_size)) + 1
+            for clip_index in range(total_clips):
+                start_point = clip_index * step_size
+                end_point = start_point + points_per_clip
+                audio_clip = splitted_audio[start_point:end_point]
+                
+                clip_name = wav_file.parent / f"{wav_file.stem}_{clip_count+1}"
+                new_clip_path = clip_name.with_suffix('.wav')
+                new_json_path = clip_name.with_suffix('.json')
+                with open(new_json_path, "w") as updated_json_file:
+                    json.dump(link_info_dict, updated_json_file)
+                sf.write(new_clip_path, audio_clip, sr)
+                clip_count+=1
+                
         os.remove(wav_file)
         os.remove(json_file_path)
         print('Done:', wav_file)
@@ -165,10 +187,10 @@ def fill_json(music_file, n_best_preds=3, essentia_weights_path = '../Dataset/es
     labeling_type = json_data['label']
 
     if labeling_type == 'essentia':
-        music_info = get_essentia_features(audio_filename=music_file_str, n_best_preds = n_best_preds, weights_folder=essentia_weights_path)
+        music_info = essentia_utils.get_essentia_features(audio_filename=music_file_str, n_best_preds = n_best_preds, weights_folder=essentia_weights_path)
     else:
-        music_info = custom_labeler(labeling_type, n_best_preds=n_best_preds)
-        
+        music_info = custom_labeler(music_file_str, labeling_type, essentia_utils.valid_instruments, essentia_utils.valid_moods, essentia_utils.valid_genres, n_best_preds=n_best_preds, weights_folder=essentia_weights_path)
+
     json_data['duration'] = sec_len
     json_data['sample_rate'] = sr
     json_data['genre'] = music_info['genres']
@@ -210,10 +232,34 @@ def fill_descriptions(split='train', core_music_folder='../Dataset/raw_music/', 
         print('-'*50)
 
 
-def custom_labeler(label, n_best_preds = 3):
+def custom_labeler(audio_file, label, valid_instruments, valid_moods, valid_genres, n_best_preds = 3, weights_folder='../Dataset/essentia_weights/'):
+
+    label_contains_duduk = True if label.find('duduk') != -1 else False
+    label_contains_klarnet = True if label.find('klarnet') != -1 else False
+    label_is_armenian = True if label == 'armenian' else False
+    
+    label = label.replace('other', 'other instruments')
+    embeddings = essentia_utils.get_embedding_essentia(audio_file, weights_folder)
+
+    #Instruments
     result_dict = {} 
-    if label=='duduk':
-        result_dict['genres'] = 'Armenian, Armenian Folk'
-        result_dict['instruments'] = ['duduk']   
-        result_dict['moods'] = ', '.join(random.sample(['melancholic', 'emotional', 'dramatic', 'relaxing', 'sad'], n_best_preds))
+    if not label_is_armenian:
+        default_instruments = label.split('/') 
+    else:
+        default_instruments = ['mix of instruments']
+
+    audio_instruments = essentia_utils.predict_instruments(embeddings, n_best_preds, valid_instruments, threshold=0.35, weights_folder=weights_folder, guarantee_pred=True)
+    union_instruments = list(set(audio_instruments) | set(default_instruments))
+    print(union_instruments)
+    result_dict['instruments'] = union_instruments  
+
+    #Mood
+    audio_mood = essentia_utils.predict_mood(embeddings, n_best_preds, valid_moods, weights_folder=weights_folder)
+    result_dict['moods'] = audio_mood
+
+    #Genres
+    audio_genres = essentia_utils.predict_genre(embeddings, n_best_preds, valid_genres, weights_folder=weights_folder, guarantee_pred=True)
+    if label_contains_duduk or label_contains_klarnet or label_is_armenian:
+        result_dict['genres'] = audio_genres + ', ' + random.choice(['Armenian Folk', 'Armenian traditional music'])
+    
     return result_dict
