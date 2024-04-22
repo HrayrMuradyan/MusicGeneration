@@ -254,12 +254,11 @@ def custom_labeler(audio_file, label, valid_instruments, valid_moods, valid_genr
     result_dict['instruments'] = union_instruments  
 
     #Mood
-    audio_mood = essentia_utils.predict_mood(embeddings, n_best_preds, valid_moods, weights_folder=weights_folder)
-    result_dict['moods'] = audio_mood
+    result_dict['moods'] = essentia_utils.predict_mood(embeddings, n_best_preds, valid_moods, weights_folder=weights_folder)
 
     #Genres
-    audio_genres = essentia_utils.predict_genre(embeddings, n_best_preds, valid_genres, weights_folder=weights_folder, guarantee_pred=True)
+    result_dict['genres'] = essentia_utils.predict_genre(embeddings, n_best_preds, valid_genres, weights_folder=weights_folder, guarantee_pred=True)
     if label_contains_duduk or label_contains_klarnet or label_is_armenian:
-        result_dict['genres'] = audio_genres + ', ' + random.choice(['Armenian Folk', 'Armenian traditional music'])
+        result_dict['genres'] = result_dict['genres'] + ', ' + random.choice(['Armenian Folk', 'Armenian traditional music'])
     
     return result_dict
