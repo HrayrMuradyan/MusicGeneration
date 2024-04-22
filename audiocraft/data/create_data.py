@@ -187,7 +187,7 @@ def fill_json(music_file, n_best_preds=3, essentia_weights_path = '../Dataset/es
     labeling_type = json_data['label']
 
     if labeling_type == 'essentia':
-        music_info = essentia_utils.get_essentia_features(audio_filename=music_file_str, n_best_preds = n_best_preds, weights_folder=essentia_weights_path)
+        music_info = essentia_utils.get_essentia_features(audio_filename=music_file_str, valid_instruments=essentia_utils.valid_instruments, valid_moods=essentia_utils.valid_moods, valid_genres=essentia_utils.valid_genres, n_best_preds = n_best_preds, weights_folder=essentia_weights_path)
     else:
         music_info = custom_labeler(music_file_str, labeling_type, essentia_utils.valid_instruments, essentia_utils.valid_moods, essentia_utils.valid_genres, n_best_preds=n_best_preds, weights_folder=essentia_weights_path)
 
