@@ -3,6 +3,7 @@ from moviepy.editor import *
 import os
 import shutil
 import random
+import time
 
 import json
 from pathlib import Path
@@ -68,10 +69,13 @@ def download_split(split='train', link_core_path='../Dataset/youtube_music_links
         
     with open(link_file, "r") as opened_link_file:
         for line in opened_link_file:
-            link_info_dict = json.loads(line)
-            youtube_link = link_info_dict.pop('link')
-            download_audio(url=youtube_link, link_info_dict=link_info_dict, save_path=save_path, overwrite=overwrite)
-
+            try:
+                link_info_dict = json.loads(line)
+                youtube_link = link_info_dict.pop('link')
+                download_audio(url=youtube_link, link_info_dict=link_info_dict, save_path=save_path, overwrite=overwrite)
+                time.sleep(1.5)
+            except Exception as e:
+                print(f'-----------ERROR------------- {line} -> ', e, )
 
 def divide_into_clips(split='train', raw_music_path='../Dataset/raw_music/', clip_duration=30, stride=15):
     raw_music_full_path = Path(raw_music_path) / split

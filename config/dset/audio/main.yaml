@@ -5,6 +5,6 @@ datasource:
   max_channels: 2
 
   train: dataset/train
-  valid: dataset/train
+  valid: dataset/valid
   evaluate: dataset/train
-  generate: dataset/train
+  generate: dataset/valid
