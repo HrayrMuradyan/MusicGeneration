@@ -14,6 +14,7 @@ import random
 import typing as tp
 
 import torch
+import torch.nn.functional as F
 
 from .info_audio_dataset import (
     InfoAudioDataset,
@@ -283,15 +284,25 @@ class MusicTensorDataset(torch.utils.data.Dataset):
             Eventually dataset_multiplier*num_samples should be close to desired_num_samples
 
     """
-    def __init__(self, path, randomized=True, desired_num_samples=100):
+    def __init__(self, path, randomized=True, desired_num_samples=100, token_dropout_p = 0.0, description_dropout_p = 0.0):
         logging.info(f'KM: Creating MusicTensorDataset with path: {path} with random = {randomized}')
         self.path = path
 
         self.folders = self.get_valid_folders()
         self.random = randomized
 
-        dataset_multiplier = max(int(desired_num_samples/len(self.folders)), 1)
+        self.token_dropout_p = token_dropout_p
+        self.description_dropout_p = description_dropout_p
+
+        if desired_num_samples is not None:
+            dataset_multiplier = max(int(desired_num_samples/len(self.folders)), 1)
+        else:
+            dataset_multiplier = 1
+        print(f'Initialized MusicTensorDataset with n_folders = {len(self.folders)}, token_dropout_p = {token_dropout_p} and description_dropout_p = {description_dropout_p}')
+
         self.folders = self.folders*dataset_multiplier
+        print(f'Multiplying folders with {dataset_multiplier} to get close to the desired number of iterations, thus n_folders = {len(self.folders)}')
+
 
     def get_valid_folders(self):
         """
@@ -308,6 +319,44 @@ class MusicTensorDataset(torch.utils.data.Dataset):
 
         return folders
 
+    @staticmethod
+    def drop_description(inp):
+        """
+        Inplace full dropout.
+        """
+        inp_ids = inp['condition_tensors']['description'][0]
+        attention_mask = inp['condition_tensors']['description'][1]
+
+        inp_ids[...] = 0.0
+        attention_mask[...] = 0
+
+        inp['condition_tensors']['description'] = (inp_ids, attention_mask)
+        return inp
+
+    @staticmethod
+    def token_dropout(inp, index):
+        """
+        Given input_ids and attention_mask perform token_dropout in given indices.
+        """
+
+        inp_ids = inp['condition_tensors']['description'][0]
+        attention_mask = inp['condition_tensors']['description'][1]
+
+        original_length = attention_mask.shape[0]
+
+        inp_ids[index] = torch.zeros(inp_ids.shape[1], dtype=inp_ids.dtype)
+        attention_mask[index] = 0
+
+        inp_ids = inp_ids[attention_mask.nonzero(as_tuple=True)]
+        attention_mask = attention_mask[attention_mask.nonzero(as_tuple=True)]
+
+        inp_ids = F.pad(inp_ids, (0, 0, 0, original_length - inp_ids.shape[0]), value=0.0)
+        attention_mask = F.pad(attention_mask, (0, original_length - attention_mask.shape[-1]), value=0)
+
+        inp['condition_tensors']['description'] = (inp_ids, attention_mask)
+
+        return inp
+
     def __len__(self):
         return len(self.folders)
 
@@ -323,4 +372,14 @@ class MusicTensorDataset(torch.utils.data.Dataset):
             folder_index = idx
 
         folder = os.path.join(self.path, self.folders[folder_index])
-        return torch.load(os.path.join(folder, 'encodec_encoding.pt')), (self.folders[folder_index], torch.load(os.path.join(folder, 'attributes.pt')))
+        attributes = torch.load(os.path.join(folder, 'attributes.pt'))
+
+        # Token dropout
+        token_dropout_indices = torch.rand(attributes['condition_tensors']['description'][1].shape) < self.token_dropout_p
+        attributes = self.token_dropout(attributes, token_dropout_indices)
+
+        # Full dropout
+        if torch.rand(1) < self.description_dropout_p:
+            attributes = self.drop_description(attributes)
+
+        return torch.load(os.path.join(folder, 'encodec_encoding.pt')), (self.folders[folder_index], attributes)
