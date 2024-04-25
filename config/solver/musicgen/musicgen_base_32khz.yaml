@@ -36,7 +36,7 @@ dataset:
   sample_on_duration: false  # Uniform sampling all the way
 
 generate:
-  every: 2
+  every: 5
   lm:
     use_sampling: true
     top_k: 250
