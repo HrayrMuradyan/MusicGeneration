@@ -149,6 +149,7 @@ def prepare_attributes(split='train', core_music_folder='../Dataset/raw_music/')
         attribute_dict["instrument"] = ""
         attribute_dict["moods"] = []
         attribute_dict["label"] = link_info_dict["label"]
+        attribute_dict["manual_description"] = link_info_dict["manual_description"]
 
         with open(json_file_path, "w") as attr_json_file:
             json.dump(attribute_dict, attr_json_file)
@@ -221,14 +222,15 @@ def fill_descriptions(split='train', core_music_folder='../Dataset/raw_music/', 
     for json_file in json_files:
         with open(json_file, 'r') as unfilled_json:
             json_data = json.load(unfilled_json)
-        description = description_generator.generate(json_data)
-        json_data['description'] = description
-
+        json_data['description'] = description_generator.gen_creative_description(json_data)
+        json_data['default_description'] = description_generator.gen_default_description(json_data)
+        
         with open(json_file, "w") as filled_json:
             json.dump(json_data, filled_json)
             
         print('\nDone:', json_file)
-        print('Description:', description)
+        print('Creative description:', json_data['description'])
+        print('\nDefault description:', json_data['default_description'])
         print('-'*50)
 
 

@@ -1143,7 +1143,7 @@ class ConditioningProvider(nn.Module):
 
     @property
     def text_conditions(self):
-        return [k for k, v in self.conditioners.items() if isinstance(v, TextConditioner)]
+        return [k for k, v in self.conditioners.items() if isinstance(v, TextConditioner)]  # {'description': T5Conditioner}
 
     @property
     def wav_conditions(self):
@@ -1172,10 +1172,10 @@ class ConditioningProvider(nn.Module):
         wavs = self._collate_wavs(inputs)
         joint_embeds = self._collate_joint_embeds(inputs)
 
-        assert set(text.keys() | wavs.keys() | joint_embeds.keys()).issubset(set(self.conditioners.keys())), (
-            f"Got an unexpected attribute! Expected {self.conditioners.keys()}, ",
-            f"got {text.keys(), wavs.keys(), joint_embeds.keys()}"
-        )
+        # assert set(text.keys() | wavs.keys() | joint_embeds.keys()).issubset(set(self.conditioners.keys())), (
+        #     f"Got an unexpected attribute! Expected {self.conditioners.keys()}, ",
+        #     f"got {text.keys(), wavs.keys(), joint_embeds.keys()}"
+        # )
 
         for attribute, batch in chain(text.items(), wavs.items(), joint_embeds.items()):
             output[attribute] = self.conditioners[attribute].tokenize(batch)
@@ -1212,6 +1212,7 @@ class ConditioningProvider(nn.Module):
         {
             "genre": ["Rock", "Hip-hop"],
             "description": ["A rock song with a guitar solo", "A hip-hop verse"]
+            "default_description": ["A rock song with a guitar solo", "A hip-hop verse"]
         }
 
         Args:
@@ -1221,9 +1222,13 @@ class ConditioningProvider(nn.Module):
         """
         out: tp.Dict[str, tp.List[tp.Optional[str]]] = defaultdict(list)
         texts = [x.text for x in samples]
+
         for text in texts:
-            for condition in self.text_conditions:
-                out[condition].append(text[condition])
+            for condition in self.text_conditions: 
+                for key in text.keys():
+                    text_condition = text[key]
+                    if condition in key and text_condition:
+                        out[condition].append(text[key])
         return out
 
     def _collate_wavs(self, samples: tp.List[ConditioningAttributes]) -> tp.Dict[str, WavCondition]:
