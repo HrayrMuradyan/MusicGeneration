@@ -21,6 +21,8 @@ compression_model_checkpoint: //pretrained/facebook/encodec_32khz
 memory_saver:
   enable: true
   compression_frame_rate: 50
+  token_dropout_p: 0.0
+  description_dropout_p: 0.0
 
 channels: 1
 sample_rate: 32000
@@ -36,7 +38,7 @@ dataset:
   sample_on_duration: false  # Uniform sampling all the way
 
 generate:
-  every: 2
+  every: 5
   lm:
     use_sampling: true
     top_k: 250
@@ -44,12 +46,12 @@ generate:
 
 optim:
   epochs: 500
-  optimizer: dadam
-  lr: 1
+  optimizer: adamw
+  lr: 1e-4
   ema:
     use: true
     updates: 10
-    device: cpu
+    device: cuda
 
 logging:
   log_tensorboard: true
@@ -57,6 +59,6 @@ logging:
 schedule:
   lr_scheduler: cosine
   cosine:
-    warmup: 4000
+    warmup: 100
     lr_min_ratio: 0.0
     cycle_length: 1.0

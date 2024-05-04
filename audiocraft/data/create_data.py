@@ -3,7 +3,7 @@ from moviepy.editor import *
 import os
 import shutil
 import random
-
+import time
 import json
 from pathlib import Path
 
@@ -70,8 +70,11 @@ def download_split(split='train', link_core_path='../Dataset/youtube_music_links
         for line in opened_link_file:
             link_info_dict = json.loads(line)
             youtube_link = link_info_dict.pop('link')
-            download_audio(url=youtube_link, link_info_dict=link_info_dict, save_path=save_path, overwrite=overwrite)
-
+            try:
+                download_audio(url=youtube_link, link_info_dict=link_info_dict, save_path=save_path, overwrite=overwrite)
+                time.sleep(0.75)
+            except Exception as e:
+                print(f'-----------ERROR------------- {line} -> ', e, )
 
 def divide_into_clips(split='train', raw_music_path='../Dataset/raw_music/', clip_duration=30, stride=15):
     raw_music_full_path = Path(raw_music_path) / split
@@ -100,24 +103,26 @@ def divide_into_clips(split='train', raw_music_path='../Dataset/raw_music/', cli
 
         clip_count = 0
         for interval_index, splitted_audio in enumerate(splitted_audios):
-            interval_label = interval_labels[interval_index]
-            link_info_dict['label'] = interval_label
-            points_per_clip = clip_duration * sr
-            step_size = stride * sr
-            total_clips = int(np.ceil((len(splitted_audio) - points_per_clip) / step_size)) + 1
-            for clip_index in range(total_clips):
-                start_point = clip_index * step_size
-                end_point = start_point + points_per_clip
-                audio_clip = splitted_audio[start_point:end_point]
-                
-                clip_name = wav_file.parent / f"{wav_file.stem}_{clip_count+1}"
-                new_clip_path = clip_name.with_suffix('.wav')
-                new_json_path = clip_name.with_suffix('.json')
-                with open(new_json_path, "w") as updated_json_file:
-                    json.dump(link_info_dict, updated_json_file)
-                sf.write(new_clip_path, audio_clip, sr)
-                clip_count+=1
-                
+            try:
+                interval_label = interval_labels[interval_index]
+                link_info_dict['label'] = interval_label
+                points_per_clip = clip_duration * sr
+                step_size = stride * sr
+                total_clips = int(np.ceil((len(splitted_audio) - points_per_clip) / step_size)) + 1
+                for clip_index in range(total_clips):
+                    start_point = clip_index * step_size
+                    end_point = start_point + points_per_clip
+                    audio_clip = splitted_audio[start_point:end_point]
+                    
+                    clip_name = wav_file.parent / f"{wav_file.stem}_{clip_count+1}"
+                    new_clip_path = clip_name.with_suffix('.wav')
+                    new_json_path = clip_name.with_suffix('.json')
+                    with open(new_json_path, "w") as updated_json_file:
+                        json.dump(link_info_dict, updated_json_file)
+                    sf.write(new_clip_path, audio_clip, sr)
+                    clip_count+=1
+            except Exception as e:
+                print(f'Error when processing {wav_file} with {interval_splits} intervals splits and {interval_labels} interval labels')
         os.remove(wav_file)
         os.remove(json_file_path)
         print('Done:', wav_file)

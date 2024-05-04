@@ -499,11 +499,11 @@ class StandardSolver(ABC, flashy.BaseSolver):
                 self.run_stage('valid', self.valid)
                 # the best state is updated with EMA states if available
                 self.update_best_state_from_stage('valid')
-            with self.swap_best_state():
-                if self.should_run_stage('evaluate'):
-                    self.run_stage('evaluate', self.evaluate)
-                if self.should_run_stage('generate'):
-                    self.run_stage('generate', with_rank_rng()(self.generate))
+            # with self.swap_best_state():
+            if self.should_run_stage('evaluate'):
+                self.run_stage('evaluate', self.evaluate)
+            if self.should_run_stage('generate'):
+                self.run_stage('generate', with_rank_rng()(self.generate))
 
 
     def freeze_layers(self, max_layer = 10):
