@@ -44,7 +44,7 @@ dataset:
   train:
     num_samples: 1000000 # need a randomly large number here for AudioDataset
   valid:
-    num_samples: 200
+    num_samples: 400
   generate:
     num_samples: 10
 

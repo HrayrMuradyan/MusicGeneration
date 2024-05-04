@@ -665,7 +665,7 @@ def get_embedding_essentia(audio_filename, weights_folder='../Dataset/essentia_w
     return embeddings
 
 def get_essentia_features(audio_filename, n_best_preds, valid_genres, valid_moods, valid_instruments, weights_folder='../Dataset/essentia_weights/'):
-    embeddings = get_embedding_essentia(audio_filename)
+    embeddings = get_embedding_essentia(audio_filename, weights_folder=weights_folder)
     result_dict = {}
     result_dict['genres'] = predict_genre(embeddings, n_best_preds, valid_genres)
     result_dict['moods'] = predict_mood(embeddings, n_best_preds, valid_moods)
