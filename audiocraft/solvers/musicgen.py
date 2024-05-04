@@ -362,6 +362,7 @@ class MusicGenSolver(base.StandardSolver):
         if self.cfg.memory_saver.enable:
             audio_tokens, (_, conditions) = batch
             condition_tensors, padding_mask = conditions['condition_tensors'], conditions['padding_mask']
+
             audio_tokens = audio_tokens.to(self.device)
             for k, v in condition_tensors.items():
                 if isinstance(v, torch.Tensor):
@@ -381,7 +382,6 @@ class MusicGenSolver(base.StandardSolver):
             torch.cuda.set_sync_debug_mode('warn')
 
         with self.autocast:
-            # self.logger.warning("*"*50 + "MusicGen - RunStep - With Autocast") # HRAYR
             model_output = self.model.compute_predictions(audio_tokens, [], condition_tensors)  # type: ignore
             logits = model_output.logits
             mask = padding_mask & model_output.mask

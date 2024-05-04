@@ -48,6 +48,8 @@ class MusicInfo(AudioInfo):
     moods: tp.Optional[list] = None
     keywords: tp.Optional[list] = None
     description: tp.Optional[str] = None
+    default_description: tp.Optional[str] = None
+    manual_description: tp.Optional[str] = None
     name: tp.Optional[str] = None
     instrument: tp.Optional[str] = None
     # original wav accompanying the metadata
@@ -84,7 +86,7 @@ class MusicInfo(AudioInfo):
             preprocess_func = get_keyword_list
         elif attribute in ['genre', 'name', 'instrument']:
             preprocess_func = get_keyword
-        elif attribute in ['title', 'artist', 'description']:
+        elif attribute in ['title', 'artist', 'description', 'manual_description', 'default_description']:
             preprocess_func = get_string
         else:
             preprocess_func = None
@@ -372,14 +374,16 @@ class MusicTensorDataset(torch.utils.data.Dataset):
             folder_index = idx
 
         folder = os.path.join(self.path, self.folders[folder_index])
-        attributes = torch.load(os.path.join(folder, 'attributes.pt'))
 
-        # Token dropout
-        token_dropout_indices = torch.rand(attributes['condition_tensors']['description'][1].shape) < self.token_dropout_p
-        attributes = self.token_dropout(attributes, token_dropout_indices)
+        encodec_encoding = torch.load(os.path.join(folder, 'encodec_encoding.pt'))
+        folder_taken = self.folders[folder_index]
+        condition_tensors = torch.load(os.path.join(folder, 'attributes.pt'))
 
-        # Full dropout
-        if torch.rand(1) < self.description_dropout_p:
-            attributes = self.drop_description(attributes)
+        n_conditions = condition_tensors['condition_tensors']['description'][0].shape[0] # -> _3_, 55, 1024
 
-        return torch.load(os.path.join(folder, 'encodec_encoding.pt')), (self.folders[folder_index], attributes)
+        if n_conditions > 1:
+            condition_index = torch.randint(0, n_conditions, (1,)).item()
+            condition_tensors['condition_tensors']['description'] = condition_tensors['condition_tensors']['description'][0][condition_index], condition_tensors['condition_tensors']['description'][1][condition_index]
+
+
+        return encodec_encoding, (folder_taken, condition_tensors)
