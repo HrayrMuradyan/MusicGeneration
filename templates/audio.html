@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Playback</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+
+</head>
+<body>
+    <header>
+        <h1>Audio Playback</h1>
+    </header>
+    <main>
+        <audio controls>
+            <source src="{{ audio_file_path }}" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+        <br>
+        <a href="{{ url_for('download', file_path=audio_file_path) }}">Download Audio</a>
+        <br><br>
+        <form action="/submit_feedback" method="POST">
+            <label>Rate the audio (1-5 stars):</label>
+            <select name="rating">
+                <option value="1">1 Star</option>
+                <option value="2">2 Stars</option>
+                <option value="3">3 Stars</option>
+                <option value="4">4 Stars</option>
+                <option value="5">5 Stars</option>
+            </select><br><br>
+            <label for="comments">Comments:</label><br>
+            <textarea id="comments" name="comments" rows="4" cols="50"></textarea><br><br>
+            <input type="submit" value="Submit Feedback">
+        </form>
+    </main>
+</body>
+</html>
