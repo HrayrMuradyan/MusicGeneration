@@ -7,11 +7,13 @@ import json
 import shutil
 from MusicGenAI import MusicGenAI
 from scipy.io import wavfile
-
+import argparse
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'df64008f89557cbc33db9a5a70291af2'
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--checkpoint', help='Path to the model checkpoint')
 
 class TextForm(FlaskForm):
     user_text = TextAreaField('Provide a description for the music you want to generate. You can specify Instruments, mood and genre',
@@ -63,11 +65,12 @@ def generate_audio(text):
     filename = f"{uuid.uuid4()}.mp3"
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     
-    shutil.copyfile('download.wav', filepath)
+    # shutil.copyfile('download.wav', filepath)
 
-    # music = model.generate_music(text).numpy()
-    # wavfile.write(filepath, 32000, music) 
-    # Return the filepath for use
+    music = model.generate_music(text)
+    print(music.shape)
+    wavfile.write(filepath, 32000, music[0]) 
+    
     return filepath
 
 
@@ -106,15 +109,18 @@ if __name__ == '__main__':
     # Configure the file upload path
     UPLOAD_FOLDER = 'static/audio'
     app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-    
+
+    args = parser.parse_args()
+
+    # Define a global variable
+    model = MusicGenAI()
+
     # Create an upload folder if it doesn't exist
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     
-    # # Define a global variable
-    # model = MusicGenAI()
-    # 
-    # with app.app_context():
-    #     # Initialize model
-    #     model.load_model()
+    
+    with app.app_context():
+        # Initialize model
+        model.load_model(args.checkpoint)
 
-    app.run(debug=True)
+    app.run(debug=False)
