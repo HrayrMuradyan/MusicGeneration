@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Music Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+
+</head>
+<body>
+    <header>
+        <img src="static/logo.png" alt="Logo" />
+    </header>
+    <main>
+        <form method="POST" action="/">
+            {{ form.csrf_token }}
+            {{ form.user_text.label }}<br>
+            {{ form.user_text }}<br>
+            {{ form.submit }}<br>
+        </form>
+    </main>
+    <footer>
+        <a href="https://github.com/HrayrMuradyan/MusicGeneration">GitHub Repo</a> | <a href="https://aua.am/">AUA</a>
+    </footer>
+</body>
+</html>
