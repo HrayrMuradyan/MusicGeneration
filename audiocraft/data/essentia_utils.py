@@ -615,6 +615,9 @@ valid_instruments = [
 ]
 
 def make_comma_separated_unique(tags):
+    """
+    Given the predicted tags, makes them comma separated. If there are repetitions, removes them.
+    """
     seen_tags = set()
     result = []
     for tag in ', '.join(tags).split(', '):
@@ -624,6 +627,9 @@ def make_comma_separated_unique(tags):
     return ', '.join(result)
     
 def filter_predictions(predictions, class_list, valid_class_list, threshold=0.1, n_best_preds = 3, guarantee_pred=True):
+    """
+    Function for filtering the best N predictions
+    """
     predictions_mean = np.mean(predictions, axis=0)
     sorted_indices = np.argsort(predictions_mean)[::-1]
     valid_sorted_indices = [i for i in sorted_indices if class_list[i] in valid_class_list]
@@ -667,7 +673,6 @@ def get_embedding_essentia(audio_filename, weights_folder='../Dataset/essentia_w
 def get_essentia_features(audio_filename, n_best_preds, valid_genres, valid_moods, valid_instruments, weights_folder='../Dataset/essentia_weights/'):
     embeddings = get_embedding_essentia(audio_filename, weights_folder=weights_folder)
     result_dict = {}
-    result_dict['genres'] = predict_genre(embeddings, n_best_preds, valid_genres)
     result_dict['moods'] = predict_mood(embeddings, n_best_preds, valid_moods)
     result_dict['instruments'] = predict_instruments(embeddings, n_best_preds, valid_instruments)
     return result_dict

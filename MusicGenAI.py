@@ -66,7 +66,7 @@ class MusicGenAI:
         print('4/5 -> Compression model loaded...')
 
         self.model = MusicGen(checkpoint_def, compression_model, lm_model)
-        self.model.set_generation_params(duration=5)
+        self.model.set_generation_params(duration=30)
         print('5/5 -> MusicGen model Initialized...')
 
 

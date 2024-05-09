@@ -148,7 +148,7 @@ def prepare_attributes(split='train', core_music_folder='../Dataset/raw_music/')
         attribute_dict["keywords"] = ""
         attribute_dict["duration"] = 0
         attribute_dict["bpm"] = ""
-        attribute_dict["genre"] = ""
+        attribute_dict["genre"] = link_info_dict['genre']
         attribute_dict["title"] = ""
         attribute_dict["name"] = music_file_name
         attribute_dict["instrument"] = ""
@@ -199,7 +199,6 @@ def fill_json(music_file, n_best_preds=3, essentia_weights_path = '../Dataset/es
 
     json_data['duration'] = sec_len
     json_data['sample_rate'] = sr
-    json_data['genre'] = music_info['genres']
     json_data['instrument'] = ', '.join(music_info['instruments'])
     json_data['moods'] = music_info['moods'].split(', ')
 
@@ -250,22 +249,14 @@ def custom_labeler(audio_file, label, valid_instruments, valid_moods, valid_genr
 
     #Instruments
     result_dict = {} 
-    if not label_is_armenian:
-        default_instruments = label.split('/') 
-    else:
-        default_instruments = ['mix of instruments']
+    default_instruments = label.split('/') 
+
 
     audio_instruments = essentia_utils.predict_instruments(embeddings, n_best_preds, valid_instruments, threshold=0.35, weights_folder=weights_folder, guarantee_pred=True)
     union_instruments = list(set(audio_instruments) | set(default_instruments))
-    print(union_instruments)
     result_dict['instruments'] = union_instruments  
 
     #Mood
     result_dict['moods'] = essentia_utils.predict_mood(embeddings, n_best_preds, valid_moods, weights_folder=weights_folder)
-
-    #Genres
-    result_dict['genres'] = essentia_utils.predict_genre(embeddings, n_best_preds, valid_genres, weights_folder=weights_folder, guarantee_pred=True)
-    if label_contains_duduk or label_contains_klarnet or label_is_armenian:
-        result_dict['genres'] = result_dict['genres'] + ', ' + random.choice(['Armenian Folk', 'Armenian traditional music'])
     
     return result_dict

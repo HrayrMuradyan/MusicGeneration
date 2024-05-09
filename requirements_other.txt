@@ -1,0 +1,5 @@
+flask==3.0.3
+flask-wtf==1.2.1
+pytube==15.0.0
+moviepy==1.0.3
+essentia-tensorflow==2.1b6.dev1110

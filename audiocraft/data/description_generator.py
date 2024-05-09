@@ -4,11 +4,19 @@ import transformers
 import torch
 
 class DescriptionGenerator:
+    """
+    Class DescriptionGenerator used for generating descriptions.
+
+    """
     def __init__(self, checkpoint='ericzzz/falcon-rw-1b-instruct-openorca'):
         self.checkpoint = checkpoint
         self.pipeline = self.load_pipeline()
         
     def load_pipeline(self):
+        """
+        Function for loading the LM model pipeline
+
+        """
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         tokenizer = AutoTokenizer.from_pretrained(self.checkpoint)
         pipeline = transformers.pipeline(
@@ -23,6 +31,10 @@ class DescriptionGenerator:
         return pipeline
 
     def gen_default_description(self, json_data):
+        """
+        Given the json data, generate the default description with fixed structure
+
+        """
         moods = json_data['moods']
         genre = json_data['genre']
         instrument = json_data['instrument']
@@ -36,6 +48,9 @@ class DescriptionGenerator:
         
     
     def create_prompt(self, json_data):
+        """
+        Given the json data generate a prompt for the LM model
+        """
         moods = json_data['moods']
         genre = json_data['genre']
         instrument = json_data['instrument']
@@ -45,9 +60,12 @@ class DescriptionGenerator:
         return prompt
 
 
-    def gen_creative_description(self, data, rep_penalty=1.05):
+    def gen_creative_description(self, json_data, rep_penalty=1.05):
+        """
+        Generate creative description given the json_data
+        """
 
-        creative_prompt = self.create_prompt(data)
+        creative_prompt = self.create_prompt(json_data)
 
         system_message = "Be very creative. Use only words that are connected to the description, do not add unnecessary keywords."
         prompt = f'<SYS> {system_message} <INST> {creative_prompt} <RESP> A music that has'
