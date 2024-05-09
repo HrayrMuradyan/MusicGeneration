@@ -1,0 +1,10 @@
+# @package __global__
+
+datasource:
+  max_sample_rate: 44100
+  max_channels: 2
+
+  train: egs/train
+  valid: egs/validation
+  evaluate: egs/train
+  generate: egs/validation
