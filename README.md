@@ -1,87 +1,57 @@
-# AudioCraft
-![docs badge](https://github.com/facebookresearch/audiocraft/workflows/audiocraft_docs/badge.svg)
-![linter badge](https://github.com/facebookresearch/audiocraft/workflows/audiocraft_linter/badge.svg)
-![tests badge](https://github.com/facebookresearch/audiocraft/workflows/audiocraft_tests/badge.svg)
+# Armenian Music Generation
 
-AudioCraft is a PyTorch library for deep learning research on audio generation. AudioCraft contains inference and training code
-for two state-of-the-art AI generative models producing high-quality audio: AudioGen and MusicGen.
+Armenian Music Generation model is a fine-tuned model based on [AudioCraft](https://github.com/facebookresearch/audiocraft/tree/main), which is a PyTorch library for audio generation, specifically, on MusicGen ([Simple and controllable model for music generation](https://arxiv.org/abs/2306.05284)).  
 
+We modified the codes for more efficient training pipeline implementation and fine-tuned the MusicGen Small model on ~120 hours of Armenian music extracted from YouTube of diverse genres, moods and instruments.
+
+The project is completed as a final, Capstone project for the American University of Armenia, with Hrayr Muradyan as the primary contributor and Karlos Muradyan serving as the supervisor.
+
+## Examples
+
+<b>Prompt:</b> A sad and melancholic play on duduk. An Armenian instrumental music that evokes relaxation, calmness accompanied by sorrow and uncheerfulness. It makes the listener think about life, fall into deep contemplation and reevaluate the past, showing the old heritage of Armenia.
+
+[Link to audio file #1](https://www.youtube.com/watch?v=aAxdNWj_KfY)
+
+<b>Prompt:</b> A music that has the following genres: Armenian folk. The following Instruments: klarnet, percussion, synthesizer, drums, bass. The following Moods: happy, energetic, melodic.
+
+[Link to audio file #2](https://www.youtube.com/watch?v=UGDMU5I1SLE)
+
+<b>Prompt:</b> The following traditional Armenian dance music is played using zurna, drums, percussion and synthesizer. The beautiful blend of this magic instruments guarantees an active, dancing mood that fills the air with an irresistible energy, prompting all to sway and groove to the uplifting beat.
+
+[Link to audio file #3](https://www.youtube.com/watch?v=Wz5eKHjeQqU)
+
+## Documentations
+
+All necessary documentations of the repository can be found in the [additional_tools/documentations/](./additional_tools/documentations/) folder.
 
 ## Installation
-AudioCraft requires Python 3.9, PyTorch 2.1.0. To install AudioCraft, you can run the following:
 
-```shell
-# Best to make sure you have torch installed first, in particular before installing xformers.
-# Don't run this if you already have PyTorch installed.
-python -m pip install 'torch==2.1.0'
-# You might need the following before trying to install the packages
-python -m pip install setuptools wheel
-# Then proceed to one of the following
-python -m pip install -U audiocraft  # stable release
-python -m pip install -U git+https://git@github.com/facebookresearch/audiocraft#egg=audiocraft  # bleeding edge
-python -m pip install -e .  # or if you cloned the repo locally (mandatory if you want to train).
-```
+The whole installation documentation can be found in the [Training and Environment Documentation File](./additional_tools/documentations/Training%20and%20Environment%20Documentation.pdf). A step-by-step explanation of how to setup the environment and proceed with training.
 
-We also recommend having `ffmpeg` installed, either through your system or Anaconda:
-```bash
-sudo apt-get install ffmpeg
-# Or if you are using Anaconda or Miniconda
-conda install "ffmpeg<5" -c conda-forge
-```
+## Data Preparation
 
-## Models
+Data preparation documentation used in our approach is fully described in the [Data Documentation](./additional_tools/documentations/Data%20Documentation.pdf). 
 
-At the moment, AudioCraft contains the training code and inference code for:
-* [MusicGen](./docs/MUSICGEN.md): A state-of-the-art controllable text-to-music model.
-* [AudioGen](./docs/AUDIOGEN.md): A state-of-the-art text-to-sound model.
-* [EnCodec](./docs/ENCODEC.md): A state-of-the-art high fidelity neural audio codec.
-* [Multi Band Diffusion](./docs/MBD.md): An EnCodec compatible decoder using diffusion.
-* [MAGNeT](./docs/MAGNET.md): A state-of-the-art non-autoregressive model for text-to-music and text-to-sound.
+## Fine-tuned checkpoint
 
-## Training code
+The weights of the model can be found in the [additional_tools/checkpoints/](./additional_tools/checkpoints/)
+folder. The weights are uploaded to a drive, from which they can be easily downloaded.
 
-AudioCraft contains PyTorch components for deep learning research in audio and training pipelines for the developed models.
-For a general introduction of AudioCraft design principles and instructions to develop your own training pipeline, refer to
-the [AudioCraft training documentation](./docs/TRAINING.md).
+## Dataset
 
-For reproducing existing work and using the developed training pipelines, refer to the instructions for each specific model
-that provides pointers to configuration, example grids and model/task-specific information and FAQ.
+The dataset is also publicly available in the folder [additional_tools/youtube_music_links/](./additional_tools/youtube_music_links/). Refer to the <b>Data Preparation</b> heading to find out how to extract the data.
 
+## Flask Application   
 
-## API documentation
+Additionally, we have prepared an easy tool which allows anyone to use the model in an user-friendly interface. The documentation for running the Flask application can be found in [Flask App Documentation](./additional_tools/documentations/Flask%20App%20Documentation.pdf).
 
-We provide some [API documentation](https://facebookresearch.github.io/audiocraft/api_docs/audiocraft/index.html) for AudioCraft.
+Here is the screenshow of how it looks like:
 
+<img width="866" alt="Capture" src="https://github.com/HrayrMuradyan/MusicGeneration/assets/82998878/f140e261-d3b3-4396-997e-2788c909970f">
 
-## FAQ
-
-#### Is the training code available?
-
-Yes! We provide the training code for [EnCodec](./docs/ENCODEC.md), [MusicGen](./docs/MUSICGEN.md) and [Multi Band Diffusion](./docs/MBD.md).
-
-#### Where are the models stored?
-
-Hugging Face stored the model in a specific location, which can be overridden by setting the `AUDIOCRAFT_CACHE_DIR` environment variable for the AudioCraft models.
-In order to change the cache location of the other Hugging Face models, please check out the [Hugging Face Transformers documentation for the cache setup](https://huggingface.co/docs/transformers/installation#cache-setup).
-Finally, if you use a model that relies on Demucs (e.g. `musicgen-melody`) and want to change the download location for Demucs, refer to the [Torch Hub documentation](https://pytorch.org/docs/stable/hub.html#where-are-my-downloaded-models-saved).
-
-
-## License
-* The code in this repository is released under the MIT license as found in the [LICENSE file](LICENSE).
-* The models weights in this repository are released under the CC-BY-NC 4.0 license as found in the [LICENSE_weights file](LICENSE_weights).
 
 
 ## Citation
 
-For the general framework of AudioCraft, please cite the following.
-```
-@inproceedings{copet2023simple,
-    title={Simple and Controllable Music Generation},
-    author={Jade Copet and Felix Kreuk and Itai Gat and Tal Remez and David Kant and Gabriel Synnaeve and Yossi Adi and Alexandre Défossez},
-    booktitle={Thirty-seventh Conference on Neural Information Processing Systems},
-    year={2023},
-}
-```
+We used the source code for the AudioCraft framework, specifically MusicGen, Simple and Controllable Music Generation, developed by Jade Copet and Felix Kreuk and Itai Gat and Tal Remez and David Kant and Gabriel Synnaeve and Yossi Adi and Alexandre Défossez. The paper was presented at the Thirty-seventh Conference on Neural Information Processing Systems in 2023.
 
-When referring to a specific model, please cite as mentioned in the model specific README, e.g
-[./docs/MUSICGEN.md](./docs/MUSICGEN.md), [./docs/AUDIOGEN.md](./docs/AUDIOGEN.md), etc.
